@@ -255,3 +255,31 @@ body{
 .card {
   text-shadow: 0 0 6px rgba(255,255,255,.25);
 }
+/* ===== SEND BUTTON VISIBILITY FIX ===== */
+
+.btn{
+  margin-top: 22px;              /* yukarıdan boşluk */
+  display: block;
+  width: 100%;
+  font-size: 15px;
+  letter-spacing: .4px;
+  background: linear-gradient(135deg, #ff4fb4, #c084fc);
+  border: 1px solid rgba(255,255,255,.35);
+  box-shadow: 0 12px 35px rgba(255,79,180,.55);
+}
+
+.btn:hover{
+  transform: translateY(-3px);
+  box-shadow: 0 18px 45px rgba(255,79,180,.7);
+}
+
+.card input[type="checkbox"]{
+  transform: scale(1.15);
+  margin-right: 8px;
+}
+
+/* tekrar alırım alanına alt boşluk */
+.card input[type="checkbox"] + label{
+  display: inline-block;
+  margin-bottom: 12px;
+}
