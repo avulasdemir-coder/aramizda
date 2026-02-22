@@ -189,3 +189,38 @@ body{
   height:18px;
   filter: drop-shadow(0 0 8px rgba(255,255,255,.6));
 }
+/* ===== STRONG TEXT PATCH ===== */
+
+.muted{
+  color: rgba(255,255,255,.92);
+  font-weight: 700;
+  letter-spacing: .3px;
+}
+
+.card-title{
+  font-weight: 800;
+  letter-spacing: .5px;
+}
+
+.item{
+  font-weight: 600;
+  color: rgba(255,255,255,.95);
+}
+
+.item strong{
+  font-weight: 900;
+  text-shadow: 0 0 12px rgba(255,255,255,.4);
+}
+
+.badge{
+  font-weight: 800;
+  color: white;
+  background: rgba(255,255,255,.25);
+}
+
+.category-text{
+  font-weight: 800;
+  color: white;
+  opacity: .98;
+  text-shadow: 0 0 10px rgba(255,255,255,.35);
+}
