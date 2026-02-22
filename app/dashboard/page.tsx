@@ -8,7 +8,7 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-type Product = { id: string; name: string; brand: string; category: string }
+type Product = { id: string; name: string; brand: string; category: string; image_url?: string | null }
 
 type ReviewRow = {
   id: string
@@ -17,7 +17,7 @@ type ReviewRow = {
   cons: string | null
   would_buy_again: boolean | null
   created_at: string
-  products?: { name: string; brand: string; category: string }[] | null
+  products?: { name: string; brand: string; category: string; image_url?: string | null }[] | null
 }
 
 function Stars({ value }: { value: number }) {
@@ -38,13 +38,27 @@ function Stars({ value }: { value: number }) {
   )
 }
 
+function slugify(s: string) {
+  return s
+    .trim()
+    .toLowerCase()
+    .replaceAll('ı', 'i')
+    .replaceAll('ğ', 'g')
+    .replaceAll('ü', 'u')
+    .replaceAll('ş', 's')
+    .replaceAll('ö', 'o')
+    .replaceAll('ç', 'c')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
 export default function DashboardPage() {
   const [email, setEmail] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [msg, setMsg] = useState<string>('')
 
-  // product search
+  // search
   const [q, setQ] = useState('')
   const [products, setProducts] = useState<Product[]>([])
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
@@ -53,12 +67,13 @@ export default function DashboardPage() {
   const [pBrand, setPBrand] = useState('')
   const [pName, setPName] = useState('')
   const [pCategory, setPCategory] = useState('Cilt Bakım')
+  const [pImageFile, setPImageFile] = useState<File | null>(null)
   const [addingProduct, setAddingProduct] = useState(false)
 
-  // latest reviews
+  // reviews
   const [latest, setLatest] = useState<ReviewRow[]>([])
 
-  // add review form
+  // add review
   const [rating, setRating] = useState<number>(5)
   const [pros, setPros] = useState('')
   const [cons, setCons] = useState('')
@@ -118,7 +133,7 @@ export default function DashboardPage() {
     try {
       const { data, error } = await supabase
         .from('products')
-        .select('id,name,brand,category')
+        .select('id,name,brand,category,image_url')
         .or(`name.ilike.%${term}%,brand.ilike.%${term}%`)
         .order('brand', { ascending: true })
         .order('name', { ascending: true })
@@ -138,14 +153,14 @@ export default function DashboardPage() {
         .from('reviews')
         .select(
           `
-            id,
-            rating,
-            pros,
-            cons,
-            would_buy_again,
-            created_at,
-            products(name,brand,category)
-          `
+          id,
+          rating,
+          pros,
+          cons,
+          would_buy_again,
+          created_at,
+          products(name,brand,category,image_url)
+        `
         )
         .order('created_at', { ascending: false })
         .limit(10)
@@ -204,9 +219,54 @@ export default function DashboardPage() {
     }
   }
 
+  const findDuplicateProduct = async (brand: string, name: string) => {
+    const { data, error } = await supabase
+      .from('products')
+      .select('id,name,brand,category,image_url')
+      .ilike('brand', brand)
+      .ilike('name', name)
+      .limit(10)
+
+    if (error) throw error
+    const rows = (data as Product[]) ?? []
+    const exact = rows.find(
+      (p) => p.brand.trim().toLowerCase() === brand.trim().toLowerCase() && p.name.trim().toLowerCase() === name.trim().toLowerCase()
+    )
+    return exact ?? null
+  }
+
+  const uploadProductImage = async (file: File, brand: string, name: string, uid: string) => {
+    // sadece görsel
+    if (!file.type.startsWith('image/')) {
+      throw new Error('Sadece fotoğraf yükleyebilirsin.')
+    }
+    // 6MB sınır (test için)
+    if (file.size > 6 * 1024 * 1024) {
+      throw new Error('Fotoğraf çok büyük. 6MB altı yükle.')
+    }
+
+    const ext = file.name.split('.').pop() || 'jpg'
+    const safe = slugify(`${brand}-${name}`)
+    const path = `${uid}/${Date.now()}-${safe}.${ext}`
+
+    const { error: upErr } = await supabase.storage.from('product-images').upload(path, file, {
+      cacheControl: '3600',
+      upsert: false,
+      contentType: file.type,
+    })
+    if (upErr) throw upErr
+
+    const { data: pub } = supabase.storage.from('product-images').getPublicUrl(path)
+    const publicUrl = pub?.publicUrl
+    if (!publicUrl) throw new Error('Fotoğraf URL alınamadı.')
+
+    return { path, publicUrl }
+  }
+
   const addProduct = async () => {
     setMsg('')
     if (!userId) return setMsg('Kullanıcı bulunamadı.')
+
     const brand = pBrand.trim()
     const name = pName.trim()
     const category = pCategory.trim()
@@ -215,6 +275,26 @@ export default function DashboardPage() {
 
     setAddingProduct(true)
     try {
+      // 1) Duplicate kontrol
+      const existing = await findDuplicateProduct(brand, name)
+      if (existing) {
+        setSelectedProduct(existing)
+        setMsg('Bu ürün zaten var ✅ (seçildi)')
+        setQ(`${existing.brand} ${existing.name}`)
+        setProducts([existing])
+        return
+      }
+
+      // 2) Foto varsa upload
+      let image_path: string | null = null
+      let image_url: string | null = null
+      if (pImageFile) {
+        const uploaded = await uploadProductImage(pImageFile, brand, name, userId)
+        image_path = uploaded.path
+        image_url = uploaded.publicUrl
+      }
+
+      // 3) DB insert (unique index varsa duplicate burada da yakalanır)
       const { data, error } = await supabase
         .from('products')
         .insert({
@@ -222,8 +302,10 @@ export default function DashboardPage() {
           name,
           category,
           created_by: userId,
+          image_path,
+          image_url,
         })
-        .select('id,name,brand,category')
+        .select('id,name,brand,category,image_url')
         .single()
 
       if (error) throw error
@@ -232,16 +314,17 @@ export default function DashboardPage() {
       setSelectedProduct(created)
       setMsg('Ürün eklendi ✅ (otomatik seçildi)')
 
-      // arama kutusuna da doldur
       setQ(`${created.brand} ${created.name}`)
       setProducts([created])
 
-      // form reset
       setPBrand('')
       setPName('')
       setPCategory('Cilt Bakım')
+      setPImageFile(null)
     } catch (e: any) {
-      setMsg(e?.message ?? 'Ürün eklenemedi.')
+      // unique index çakışması olursa da burada düşer
+      const m = e?.message ?? 'Ürün eklenemedi.'
+      setMsg(m.includes('duplicate') ? 'Bu ürün zaten var (duplicate).' : m)
     } finally {
       setAddingProduct(false)
     }
@@ -305,13 +388,26 @@ export default function DashboardPage() {
                   <div className="list">
                     {products.map((p) => (
                       <div key={p.id} className="item">
-                        <div className="row" style={{ justifyContent: 'space-between' }}>
-                          <div>
+                        <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                            {p.image_url ? (
+                              <img
+                                src={p.image_url}
+                                alt=""
+                                style={{ width: 44, height: 44, borderRadius: 12, objectFit: 'cover', border: '1px solid rgba(255,255,255,.25)' }}
+                              />
+                            ) : (
+                              <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(255,255,255,.12)', border: '1px solid rgba(255,255,255,.18)' }} />
+                            )}
+
                             <div>
-                              <strong>{p.brand}</strong> — {p.name}
+                              <div>
+                                <strong>{p.brand}</strong> — {p.name}
+                              </div>
+                              <div className="muted">{p.category}</div>
                             </div>
-                            <div className="muted">{p.category}</div>
                           </div>
+
                           <button className="btn btn-ghost" onClick={() => setSelectedProduct(p)}>
                             Seç
                           </button>
@@ -369,7 +465,7 @@ export default function DashboardPage() {
             <div className="card">
               <div className="card-inner">
                 <h2 className="card-title">Ürün Ekle</h2>
-                <div className="muted">Bulamadığın ürünü ekleyebilirsin.</div>
+                <div className="muted">Bulamadığın ürünü ekleyebilirsin (foto opsiyonel).</div>
 
                 <div className="section-gap">
                   <label className="muted">Marka</label>
@@ -390,6 +486,17 @@ export default function DashboardPage() {
                       </option>
                     ))}
                   </select>
+                </div>
+
+                <div className="section-gap">
+                  <label className="muted">Ürün Fotoğrafı (opsiyonel)</label>
+                  <input
+                    className="input"
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => setPImageFile(e.target.files?.[0] ?? null)}
+                  />
+                  <div className="muted" style={{ marginTop: 6 }}>6MB altı önerilir.</div>
                 </div>
 
                 <div className="section-gap">
@@ -449,7 +556,7 @@ export default function DashboardPage() {
             <div className="card">
               <div className="card-inner">
                 <div className="muted">
-                  Test için: önce ürün ekle veya ara → seç → deneyim gönder → solda “Son Deneyimler”e düşer.
+                  İleride: aynı mantıkla “review_media” tablosu + storage ile deneyim foto/video açacağız.
                 </div>
               </div>
             </div>
