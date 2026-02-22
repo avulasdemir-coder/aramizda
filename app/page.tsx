@@ -10,19 +10,17 @@ const supabase = createClient(
 
 export default function Home() {
   useEffect(() => {
-    const checkUser = async () => {
+    const run = async () => {
       const { data } = await supabase.auth.getSession()
       const user = data.session?.user
       if (!user) return
 
-      // Profil var mı?
       const { data: profile } = await supabase
         .from('profiles')
         .select('id, age_range')
         .eq('id', user.id)
         .single()
 
-      // Yoksa oluştur
       if (!profile) {
         await supabase.from('profiles').insert({
           id: user.id,
@@ -33,7 +31,6 @@ export default function Home() {
         return
       }
 
-      // Age boşsa onboarding
       if (!profile.age_range) {
         window.location.href = '/onboarding'
         return
@@ -42,7 +39,7 @@ export default function Home() {
       window.location.href = '/dashboard'
     }
 
-    checkUser()
+    run()
   }, [])
 
   const login = async () => {

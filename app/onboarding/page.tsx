@@ -30,7 +30,6 @@ export default function OnboardingPage() {
         .eq('id', user.id)
         .single()
 
-      // Doluysa onboarding'e gerek yok
       if (profile?.age_range) {
         window.location.href = '/dashboard'
         return
@@ -53,11 +52,7 @@ export default function OnboardingPage() {
       return
     }
 
-    await supabase
-      .from('profiles')
-      .update({ age_range: selected })
-      .eq('id', user.id)
-
+    await supabase.from('profiles').update({ age_range: selected }).eq('id', user.id)
     window.location.href = '/dashboard'
   }
 
@@ -94,11 +89,7 @@ export default function OnboardingPage() {
         ))}
       </div>
 
-      <button
-        onClick={save}
-        disabled={!selected || saving}
-        style={{ marginTop: 20 }}
-      >
+      <button onClick={save} disabled={!selected || saving} style={{ marginTop: 20 }}>
         {saving ? 'Kaydediliyor...' : 'Devam'}
       </button>
     </div>
