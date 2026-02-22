@@ -209,9 +209,8 @@ export default function DashboardPage() {
         <div className="topbar">
           <div className="brand">
             <div className="pill">
-              <strong>Aramızda</strong>
-              <span className="muted">MVP</span>
-            </div>
+  <strong>Aramızda</strong>
+</div>
           </div>
 
           <div className="pill">
