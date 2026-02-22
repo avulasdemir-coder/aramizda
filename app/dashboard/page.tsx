@@ -8,7 +8,13 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-type Product = { id: string; name: string; brand: string; category: string; image_url?: string | null }
+type Product = {
+  id: string
+  name: string
+  brand: string
+  category: string
+  image_url?: string | null
+}
 
 type ReviewRow = {
   id: string
@@ -18,6 +24,20 @@ type ReviewRow = {
   would_buy_again: boolean | null
   created_at: string
   products?: { name: string; brand: string; category: string; image_url?: string | null }[] | null
+}
+
+function slugify(s: string) {
+  return s
+    .trim()
+    .toLowerCase()
+    .replaceAll('ı', 'i')
+    .replaceAll('ğ', 'g')
+    .replaceAll('ü', 'u')
+    .replaceAll('ş', 's')
+    .replaceAll('ö', 'o')
+    .replaceAll('ç', 'c')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
 }
 
 function Stars({ value }: { value: number }) {
@@ -38,25 +58,10 @@ function Stars({ value }: { value: number }) {
   )
 }
 
-function slugify(s: string) {
-  return s
-    .trim()
-    .toLowerCase()
-    .replaceAll('ı', 'i')
-    .replaceAll('ğ', 'g')
-    .replaceAll('ü', 'u')
-    .replaceAll('ş', 's')
-    .replaceAll('ö', 'o')
-    .replaceAll('ç', 'c')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-}
-
 export default function DashboardPage() {
-  const [email, setEmail] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [msg, setMsg] = useState<string>('')
+  const [msg, setMsg] = useState('')
 
   // search
   const [q, setQ] = useState('')
@@ -77,9 +82,10 @@ export default function DashboardPage() {
   const [rating, setRating] = useState<number>(5)
   const [pros, setPros] = useState('')
   const [cons, setCons] = useState('')
-  const [wouldBuyAgain, setWouldBuyAgain] = useState<boolean>(true)
+  const [wouldBuyAgain, setWouldBuyAgain] = useState(true)
   const [saving, setSaving] = useState(false)
 
+  // --- Auth bootstrap (NO EMAIL SHOWN ANYWHERE) ---
   useEffect(() => {
     const init = async () => {
       const { data } = await supabase.auth.getSession()
@@ -88,7 +94,6 @@ export default function DashboardPage() {
         window.location.href = '/'
         return
       }
-      setEmail(u.email ?? null)
       setUserId(u.id)
       setLoading(false)
     }
@@ -98,11 +103,9 @@ export default function DashboardPage() {
     const { data: listener } = supabase.auth.onAuthStateChange((_evt, session) => {
       const u = session?.user
       if (!u) {
-        setEmail(null)
         setUserId(null)
         window.location.href = '/'
       } else {
-        setEmail(u.email ?? null)
         setUserId(u.id)
       }
     })
@@ -228,22 +231,19 @@ export default function DashboardPage() {
       .limit(10)
 
     if (error) throw error
+
     const rows = (data as Product[]) ?? []
     const exact = rows.find(
-      (p) => p.brand.trim().toLowerCase() === brand.trim().toLowerCase() && p.name.trim().toLowerCase() === name.trim().toLowerCase()
+      (p) =>
+        p.brand.trim().toLowerCase() === brand.trim().toLowerCase() &&
+        p.name.trim().toLowerCase() === name.trim().toLowerCase()
     )
     return exact ?? null
   }
 
   const uploadProductImage = async (file: File, brand: string, name: string, uid: string) => {
-    // sadece görsel
-    if (!file.type.startsWith('image/')) {
-      throw new Error('Sadece fotoğraf yükleyebilirsin.')
-    }
-    // 6MB sınır (test için)
-    if (file.size > 6 * 1024 * 1024) {
-      throw new Error('Fotoğraf çok büyük. 6MB altı yükle.')
-    }
+    if (!file.type.startsWith('image/')) throw new Error('Sadece fotoğraf yükleyebilirsin.')
+    if (file.size > 6 * 1024 * 1024) throw new Error('Fotoğraf çok büyük. 6MB altı yükle.')
 
     const ext = file.name.split('.').pop() || 'jpg'
     const safe = slugify(`${brand}-${name}`)
@@ -270,12 +270,10 @@ export default function DashboardPage() {
     const brand = pBrand.trim()
     const name = pName.trim()
     const category = pCategory.trim()
-
     if (!brand || !name || !category) return setMsg('Marka, ürün adı ve kategori zorunlu.')
 
     setAddingProduct(true)
     try {
-      // 1) Duplicate kontrol
       const existing = await findDuplicateProduct(brand, name)
       if (existing) {
         setSelectedProduct(existing)
@@ -285,7 +283,6 @@ export default function DashboardPage() {
         return
       }
 
-      // 2) Foto varsa upload
       let image_path: string | null = null
       let image_url: string | null = null
       if (pImageFile) {
@@ -294,7 +291,6 @@ export default function DashboardPage() {
         image_url = uploaded.publicUrl
       }
 
-      // 3) DB insert (unique index varsa duplicate burada da yakalanır)
       const { data, error } = await supabase
         .from('products')
         .insert({
@@ -313,7 +309,6 @@ export default function DashboardPage() {
       const created = data as Product
       setSelectedProduct(created)
       setMsg('Ürün eklendi ✅ (otomatik seçildi)')
-
       setQ(`${created.brand} ${created.name}`)
       setProducts([created])
 
@@ -322,7 +317,6 @@ export default function DashboardPage() {
       setPCategory('Cilt Bakım')
       setPImageFile(null)
     } catch (e: any) {
-      // unique index çakışması olursa da burada düşer
       const m = e?.message ?? 'Ürün eklenemedi.'
       setMsg(m.includes('duplicate') ? 'Bu ürün zaten var (duplicate).' : m)
     } finally {
@@ -330,12 +324,13 @@ export default function DashboardPage() {
     }
   }
 
-  if (loading)
+  if (loading) {
     return (
       <div className="page">
         <div className="container">Yükleniyor…</div>
       </div>
     )
+  }
 
   return (
     <div className="page">
@@ -346,7 +341,6 @@ export default function DashboardPage() {
           </div>
 
           <div className="pill">
-            <span className="muted">{email}</span>
             <button className="btn btn-ghost" onClick={logout}>
               Çıkış
             </button>
@@ -394,10 +388,24 @@ export default function DashboardPage() {
                               <img
                                 src={p.image_url}
                                 alt=""
-                                style={{ width: 44, height: 44, borderRadius: 12, objectFit: 'cover', border: '1px solid rgba(255,255,255,.25)' }}
+                                style={{
+                                  width: 44,
+                                  height: 44,
+                                  borderRadius: 12,
+                                  objectFit: 'cover',
+                                  border: '1px solid rgba(255,255,255,.25)',
+                                }}
                               />
                             ) : (
-                              <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(255,255,255,.12)', border: '1px solid rgba(255,255,255,.18)' }} />
+                              <div
+                                style={{
+                                  width: 44,
+                                  height: 44,
+                                  borderRadius: 12,
+                                  background: 'rgba(255,255,255,.12)',
+                                  border: '1px solid rgba(255,255,255,.18)',
+                                }}
+                              />
                             )}
 
                             <div>
@@ -496,7 +504,9 @@ export default function DashboardPage() {
                     accept="image/*"
                     onChange={(e) => setPImageFile(e.target.files?.[0] ?? null)}
                   />
-                  <div className="muted" style={{ marginTop: 6 }}>6MB altı önerilir.</div>
+                  <div className="muted" style={{ marginTop: 6 }}>
+                    6MB altı önerilir.
+                  </div>
                 </div>
 
                 <div className="section-gap">
@@ -555,14 +565,11 @@ export default function DashboardPage() {
 
             <div className="card">
               <div className="card-inner">
-                <div className="muted">
-                  İleride: aynı mantıkla “review_media” tablosu + storage ile deneyim foto/video açacağız.
-                </div>
+                <div className="muted">Not: Bu sayfada email/kimlik gösterimi tamamen kapalı.</div>
               </div>
             </div>
           </div>
         </div>
-
       </div>
     </div>
   )
