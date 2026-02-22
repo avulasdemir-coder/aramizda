@@ -34,38 +34,14 @@ export default function DashboardPage() {
   if (loading) return <div style={{ padding: 40 }}>Yükleniyor...</div>
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      padding: 40,
-      background: `
-        radial-gradient(circle at 20% 30%, #f8d8ff 0%, transparent 40%),
-        radial-gradient(circle at 80% 70%, #ffd6e8 0%, transparent 40%),
-        linear-gradient(135deg, #efe7ff 0%, #ffeaf3 100%)
-      `
-    }}>
-
-      <div style={{ maxWidth: 950, margin: '0 auto' }}>
+    <div style={{ padding: 40 }}>
+      <div style={{ maxWidth: 1000, margin: '0 auto' }}>
 
         {/* HEADER */}
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 45
-        }}>
-          <h1 style={{
-            margin: 0,
-            fontWeight: 800,
-            fontSize: 32,
-            background: 'linear-gradient(90deg,#9b5cff,#ff5fa2)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent'
-          }}>
-            Aramızda
-          </h1>
-
+        <div style={header}>
+          <h1 style={logo}>Aramızda</h1>
           <div>
-            <span style={{ marginRight: 18, color: '#555', fontSize: 14 }}>
+            <span style={{ marginRight: 15, fontSize: 14 }}>
               {email}
             </span>
             <button style={secondaryBtn} onClick={logout}>
@@ -78,10 +54,7 @@ export default function DashboardPage() {
         <div style={card}>
           <h2 style={title}>Ürün Ara</h2>
           <div style={{ display: 'flex', gap: 12 }}>
-            <input
-              placeholder="Örn: Cerave Nemlendirici"
-              style={input}
-            />
+            <input placeholder="Ürün adı yaz..." style={input} />
             <button style={primaryBtn}>Ara</button>
           </div>
         </div>
@@ -90,16 +63,15 @@ export default function DashboardPage() {
         <div style={card}>
           <h2 style={title}>Son Deneyimler</h2>
 
-          <div style={reviewCard}>
-            <div style={{ fontWeight: 700, fontSize: 16 }}>
+          <div style={innerCard}>
+            <div style={{ fontWeight: 600 }}>
               Cerave Nemlendirici
             </div>
-
             <div style={{ marginTop: 6, color: '#f4b400' }}>
               ⭐⭐⭐⭐☆
             </div>
 
-            <div style={{ marginTop: 12, color: '#555' }}>
+            <div style={{ marginTop: 12 }}>
               Cildi yumuşatıyor ama biraz ağır.
             </div>
 
@@ -110,7 +82,6 @@ export default function DashboardPage() {
               </button>
             </div>
           </div>
-
         </div>
 
         {/* ADD REVIEW */}
@@ -121,8 +92,15 @@ export default function DashboardPage() {
             {[5,4,3,2,1].map(n => <option key={n}>{n}</option>)}
           </select>
 
-          <textarea placeholder="Artılar" style={{ ...input, height: 100 }} />
-          <textarea placeholder="Eksiler" style={{ ...input, height: 100 }} />
+          <textarea
+            placeholder="Artılar"
+            style={{ ...input, height: 90 }}
+          />
+
+          <textarea
+            placeholder="Eksiler"
+            style={{ ...input, height: 90 }}
+          />
 
           <button style={{ ...primaryBtn, marginTop: 18 }}>
             Kaydet
@@ -134,55 +112,70 @@ export default function DashboardPage() {
   )
 }
 
-const card = {
-  background: 'rgba(255,255,255,0.9)',
-  padding: 30,
-  borderRadius: 28,
-  marginBottom: 30,
-  backdropFilter: 'blur(10px)',
-  boxShadow: '0 20px 45px rgba(155,92,255,0.12)'
+/* ===== STYLES ===== */
+
+const header: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  marginBottom: 40
 }
 
-const reviewCard = {
-  background: 'rgba(255,255,255,0.7)',
-  padding: 22,
+const logo: React.CSSProperties = {
+  margin: 0,
+  fontWeight: 800,
+  fontSize: 28,
+  background: 'linear-gradient(135deg, var(--brand-1), var(--brand-2))',
+  WebkitBackgroundClip: 'text',
+  WebkitTextFillColor: 'transparent'
+}
+
+const card: React.CSSProperties = {
+  background: 'var(--card)',
+  border: '1px solid var(--border)',
   borderRadius: 22,
-  marginTop: 18
+  padding: 28,
+  marginBottom: 28,
+  boxShadow: 'var(--shadow)'
 }
 
-const title = {
+const innerCard: React.CSSProperties = {
+  background: 'var(--card-2)',
+  borderRadius: 18,
+  padding: 20
+}
+
+const title: React.CSSProperties = {
   marginTop: 0,
-  marginBottom: 20,
-  fontWeight: 700,
-  color: '#333'
-}
-
-const input = {
-  width: '100%',
-  padding: 16,
-  borderRadius: 20,
-  border: '1px solid #f0d6ff',
-  outline: 'none',
-  fontSize: 14,
-  background: 'white'
-}
-
-const primaryBtn = {
-  background: 'linear-gradient(135deg,#9b5cff,#ff5fa2)',
-  color: 'white',
-  border: 'none',
-  padding: '14px 24px',
-  borderRadius: 22,
-  cursor: 'pointer',
+  marginBottom: 18,
   fontWeight: 700
 }
 
-const secondaryBtn = {
+const input: React.CSSProperties = {
+  width: '100%',
+  padding: 14,
+  borderRadius: 16,
+  border: '1px solid var(--border)',
+  outline: 'none',
+  marginBottom: 12
+}
+
+const primaryBtn: React.CSSProperties = {
+  background: 'linear-gradient(135deg, var(--brand-1), var(--brand-2))',
+  color: 'white',
+  border: 'none',
+  padding: '12px 20px',
+  borderRadius: 16,
+  cursor: 'pointer',
+  fontWeight: 600
+}
+
+const secondaryBtn: React.CSSProperties = {
   background: 'transparent',
-  color: '#9b5cff',
-  border: '1px solid #9b5cff',
-  padding: '8px 18px',
-  borderRadius: 20,
+  color: 'var(--brand-1)',
+  border: '1px solid var(--brand-1)',
+  padding: '8px 16px',
+  borderRadius: 16,
   cursor: 'pointer',
   fontWeight: 600
 }
