@@ -224,3 +224,34 @@ body{
   opacity: .98;
   text-shadow: 0 0 10px rgba(255,255,255,.35);
 }
+/* ===== EXPERIENCE SECTION STRONG TEXT FIX ===== */
+
+.card label,
+.card .muted,
+.card p,
+.card span {
+  color: rgba(255,255,255,.95);
+  font-weight: 700;
+  letter-spacing: .3px;
+}
+
+.card label {
+  font-size: 14px;
+}
+
+.card .muted {
+  opacity: 1;
+}
+
+.card input[type="checkbox"] + label {
+  font-weight: 800;
+}
+
+.card-title {
+  font-weight: 900;
+  letter-spacing: .6px;
+}
+
+.card {
+  text-shadow: 0 0 6px rgba(255,255,255,.25);
+}
