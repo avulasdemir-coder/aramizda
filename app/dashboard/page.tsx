@@ -22,8 +22,16 @@ type ReviewRow = {
   cons: string | null
   would_buy_again: boolean | null
   created_at: string
-  // Supabase embed bazen array döndürebiliyor; bu yüzden array kabul ediyoruz.
   products?: { name: string; brand: string; category: string }[] | null
+}
+
+type ReviewComment = {
+  id: string
+  review_id: string
+  user_id: string
+  parent_id: string | null
+  body: string
+  created_at: string
 }
 
 export default function DashboardPage() {
@@ -39,23 +47,39 @@ export default function DashboardPage() {
 
   // latest reviews
   const [latest, setLatest] = useState<ReviewRow[]>([])
+  const [latestLoading, setLatestLoading] = useState(false)
+
+  // comments by review
+  const [commentsByReview, setCommentsByReview] = useState<Record<string, ReviewComment[]>>({})
+  const [commentDraftByReview, setCommentDraftByReview] = useState<Record<string, string>>({})
+  const [commentSendingByReview, setCommentSendingByReview] = useState<Record<string, boolean>>({})
 
   // add review form
   const [rating, setRating] = useState<number>(5)
   const [pros, setPros] = useState('')
   const [cons, setCons] = useState('')
   const [wouldBuyAgain, setWouldBuyAgain] = useState<boolean>(true)
-  const [saving, setSaving] = useState(false)
+  const [savingReview, setSavingReview] = useState(false)
 
-  // --- Auth bootstrap ---
+  // --- Auth bootstrap + onboarding check ---
   useEffect(() => {
     const init = async () => {
       const { data } = await supabase.auth.getSession()
-      const session = data.session
-      const u = session?.user
-
+      const u = data.session?.user
       if (!u) {
         window.location.href = '/'
+        return
+      }
+
+      // onboarding kontrolü (age_range boşsa onboarding)
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('age_range')
+        .eq('id', u.id)
+        .single()
+
+      if (!profile?.age_range) {
+        window.location.href = '/onboarding'
         return
       }
 
@@ -88,6 +112,11 @@ export default function DashboardPage() {
     window.location.href = '/'
   }
 
+  const selectedTitle = useMemo(() => {
+    if (!selectedProduct) return ''
+    return `${selectedProduct.brand} — ${selectedProduct.name}`
+  }, [selectedProduct])
+
   // --- Product search ---
   const runSearch = async () => {
     setMsg('')
@@ -111,9 +140,10 @@ export default function DashboardPage() {
     }
   }
 
-  // --- Latest reviews (optionally filtered by product) ---
+  // --- Load latest reviews (optionally filtered by product) ---
   const loadLatest = async (productId?: string) => {
     setMsg('')
+    setLatestLoading(true)
     try {
       let query = supabase
         .from('reviews')
@@ -136,9 +166,46 @@ export default function DashboardPage() {
       const { data, error } = await query
       if (error) throw error
 
-      setLatest((data as ReviewRow[]) ?? [])
+      const rows = (data as ReviewRow[]) ?? []
+      setLatest(rows)
+
+      // yorumları da çek
+      const ids = rows.map((r) => r.id)
+      await loadCommentsForReviewIds(ids)
     } catch (e: any) {
       setMsg(e?.message ?? 'Son deneyimler yüklenemedi.')
+    } finally {
+      setLatestLoading(false)
+    }
+  }
+
+  const loadCommentsForReviewIds = async (reviewIds: string[]) => {
+    if (reviewIds.length === 0) {
+      setCommentsByReview({})
+      return
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('review_comments')
+        .select('id,review_id,user_id,parent_id,body,created_at')
+        .in('review_id', reviewIds)
+        .order('created_at', { ascending: true })
+        .limit(200)
+
+      if (error) throw error
+
+      const list = ((data as ReviewComment[]) ?? []).filter((c) => !c.parent_id) // şimdilik sadece top-level
+      const map: Record<string, ReviewComment[]> = {}
+      for (const rid of reviewIds) map[rid] = []
+      for (const c of list) {
+        if (!map[c.review_id]) map[c.review_id] = []
+        map[c.review_id].push(c)
+      }
+      setCommentsByReview(map)
+    } catch (e: any) {
+      // yorum çekme hatasını mesajla sistemi kilitlemesin
+      setMsg((prev) => prev || (e?.message ?? 'Yorumlar yüklenemedi.'))
     }
   }
 
@@ -147,16 +214,10 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading])
 
-  // seçili ürün değişince son deneyimleri filtrele
   useEffect(() => {
     if (!loading) loadLatest(selectedProduct?.id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProduct?.id, loading])
-
-  const selectedTitle = useMemo(() => {
-    if (!selectedProduct) return ''
-    return `${selectedProduct.brand} — ${selectedProduct.name}`
-  }, [selectedProduct])
 
   // --- Save review ---
   const saveReview = async () => {
@@ -170,7 +231,7 @@ export default function DashboardPage() {
       return
     }
 
-    setSaving(true)
+    setSavingReview(true)
     try {
       const payload = {
         user_id: userId,
@@ -184,20 +245,55 @@ export default function DashboardPage() {
       const { error } = await supabase.from('reviews').insert(payload)
       if (error) throw error
 
-      // form reset
       setPros('')
       setCons('')
       setWouldBuyAgain(true)
       setRating(5)
 
-      // refresh latest
       await loadLatest(selectedProduct.id)
 
       setMsg('Kaydedildi ✅')
     } catch (e: any) {
       setMsg(e?.message ?? 'Kaydetme başarısız.')
     } finally {
-      setSaving(false)
+      setSavingReview(false)
+    }
+  }
+
+  // --- Add comment ---
+  const sendComment = async (reviewId: string) => {
+    setMsg('')
+    if (!userId) {
+      setMsg('Kullanıcı yok. Çıkış yapıp tekrar giriş yap.')
+      return
+    }
+
+    const body = (commentDraftByReview[reviewId] ?? '').trim()
+    if (!body) {
+      setMsg('Yorum boş olamaz.')
+      return
+    }
+
+    setCommentSendingByReview((prev) => ({ ...prev, [reviewId]: true }))
+    try {
+      const { error } = await supabase.from('review_comments').insert({
+        review_id: reviewId,
+        user_id: userId,
+        parent_id: null,
+        body,
+      })
+      if (error) throw error
+
+      setCommentDraftByReview((prev) => ({ ...prev, [reviewId]: '' }))
+
+      // sadece o review'un yorumlarını yeniden çek
+      await loadCommentsForReviewIds([reviewId])
+
+      setMsg('Yorum eklendi ✅')
+    } catch (e: any) {
+      setMsg(e?.message ?? 'Yorum eklenemedi.')
+    } finally {
+      setCommentSendingByReview((prev) => ({ ...prev, [reviewId]: false }))
     }
   }
 
@@ -290,6 +386,7 @@ export default function DashboardPage() {
                     background: 'white',
                     cursor: 'pointer',
                   }}
+                  type="button"
                 >
                   <div style={{ fontWeight: 600 }}>
                     {p.brand} — {p.name}
@@ -307,27 +404,21 @@ export default function DashboardPage() {
       </div>
 
       {/* 2) Latest Reviews */}
-      <div
-        style={{
-          padding: 20,
-          border: '1px solid #ddd',
-          borderRadius: 10,
-          marginBottom: 16,
-        }}
-      >
+      <div style={{ padding: 20, border: '1px solid #ddd', borderRadius: 10, marginBottom: 16 }}>
         <h2 style={{ marginTop: 0 }}>Son Deneyimler</h2>
-        {!selectedProduct ? (
-          <div style={{ fontSize: 14, opacity: 0.75 }}>
-            Bir ürün seçersen sadece o ürünün deneyimleri listelenir.
-          </div>
-        ) : null}
 
-        {latest.length === 0 ? (
+        {latestLoading ? (
+          <div style={{ fontSize: 14, opacity: 0.75 }}>Yükleniyor...</div>
+        ) : latest.length === 0 ? (
           <div style={{ fontSize: 14, opacity: 0.75 }}>Henüz deneyim yok.</div>
         ) : (
-          <div style={{ display: 'grid', gap: 10 }}>
+          <div style={{ display: 'grid', gap: 12 }}>
             {latest.map((r) => {
               const prod = r.products?.[0]
+              const comments = commentsByReview[r.id] ?? []
+              const sending = !!commentSendingByReview[r.id]
+              const draft = commentDraftByReview[r.id] ?? ''
+
               return (
                 <div
                   key={r.id}
@@ -343,7 +434,7 @@ export default function DashboardPage() {
                       {prod ? `${prod.brand} — ${prod.name}` : 'Ürün'}
                     </div>
                     <div style={{ fontSize: 12, opacity: 0.7 }}>
-                      {new Date(r.created_at).toLocaleString()}
+                      {new Date(r.created_at).toLocaleString('tr-TR')}
                     </div>
                   </div>
 
@@ -363,6 +454,44 @@ export default function DashboardPage() {
                       <b>Eksiler:</b> {r.cons}
                     </div>
                   ) : null}
+
+                  {/* Comments */}
+                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #eee' }}>
+                    <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8 }}>
+                      Yorumlar ({comments.length})
+                    </div>
+
+                    {comments.length === 0 ? (
+                      <div style={{ fontSize: 13, opacity: 0.7, marginBottom: 8 }}>
+                        Henüz yorum yok.
+                      </div>
+                    ) : (
+                      <div style={{ display: 'grid', gap: 8, marginBottom: 10 }}>
+                        {comments.map((c) => (
+                          <div key={c.id} style={{ padding: 10, border: '1px solid #f0f0f0', borderRadius: 10 }}>
+                            <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>
+                              {new Date(c.created_at).toLocaleString('tr-TR')}
+                            </div>
+                            <div style={{ fontSize: 14 }}>{c.body}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <input
+                        value={draft}
+                        onChange={(e) =>
+                          setCommentDraftByReview((prev) => ({ ...prev, [r.id]: e.target.value }))
+                        }
+                        placeholder="Yorum yaz..."
+                        style={{ flex: 1, padding: 10, borderRadius: 8, border: '1px solid #ccc' }}
+                      />
+                      <button onClick={() => sendComment(r.id)} disabled={sending}>
+                        {sending ? 'Gönderiliyor...' : 'Gönder'}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )
             })}
@@ -371,19 +500,11 @@ export default function DashboardPage() {
       </div>
 
       {/* 3) Add Review */}
-      <div
-        style={{
-          padding: 20,
-          border: '1px solid #ddd',
-          borderRadius: 10,
-        }}
-      >
+      <div style={{ padding: 20, border: '1px solid #ddd', borderRadius: 10 }}>
         <h2 style={{ marginTop: 0 }}>Deneyim Ekle</h2>
 
         {!selectedProduct ? (
-          <div style={{ fontSize: 14, opacity: 0.75 }}>
-            Bir sonraki adım: önce üstten bir ürün seç.
-          </div>
+          <div style={{ fontSize: 14, opacity: 0.75 }}>Önce üstten bir ürün seç.</div>
         ) : (
           <>
             <div style={{ fontSize: 14, marginBottom: 12 }}>
@@ -418,7 +539,7 @@ export default function DashboardPage() {
                 <textarea
                   value={pros}
                   onChange={(e) => setPros(e.target.value)}
-                  placeholder="Kısa ve net (isteğe bağlı)"
+                  placeholder="Kısa ve net"
                   rows={3}
                   style={{
                     display: 'block',
@@ -436,7 +557,7 @@ export default function DashboardPage() {
                 <textarea
                   value={cons}
                   onChange={(e) => setCons(e.target.value)}
-                  placeholder="Kısa ve net (isteğe bağlı)"
+                  placeholder="Kısa ve net"
                   rows={3}
                   style={{
                     display: 'block',
@@ -458,8 +579,8 @@ export default function DashboardPage() {
                 Tekrar alırım
               </label>
 
-              <button onClick={saveReview} disabled={saving}>
-                {saving ? 'Kaydediliyor...' : 'Kaydet'}
+              <button onClick={saveReview} disabled={savingReview}>
+                {savingReview ? 'Kaydediliyor...' : 'Kaydet'}
               </button>
             </div>
           </>
