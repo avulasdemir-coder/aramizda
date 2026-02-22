@@ -283,3 +283,44 @@ body{
   display: inline-block;
   margin-bottom: 12px;
 }
+/* ===== FIX: text blur + submit button spacing/contrast ===== */
+
+/* 1) Yazıları NETLEŞTİR (flu yapan gölgeleri kapat) */
+.card, .item, .muted, .badge,
+.card label, .card span, .card p,
+.item strong {
+  text-shadow: none !important;
+  filter: none !important;
+}
+
+/* 2) Deneyim Ekle alanındaki küçük yazıları güçlendir */
+.card label,
+.card .muted {
+  color: rgba(255,255,255,.96) !important;
+  font-weight: 800 !important;
+  opacity: 1 !important;
+}
+
+/* 3) Checkbox satırı ile buton arasına NET boşluk koy
+   (Deneyim Ekle’de checkbox satırından sonra gelen buton bloğu) */
+.card .card-inner .section-gap.row + .section-gap .btn {
+  margin-top: 18px !important;
+}
+
+/* 4) Gönder butonunu arka fondan AYIR (daha koyu, daha kontrast) */
+.btn{
+  background: linear-gradient(135deg, rgba(0,0,0,.55), rgba(0,0,0,.35)) !important;
+  border: 1px solid rgba(255,255,255,.55) !important;
+  box-shadow: 0 14px 35px rgba(0,0,0,.25) !important;
+}
+
+/* Ghost butonlar (Çıkış / Seç gibi) aynı kalsın ama net görünsün */
+.btn-ghost{
+  background: rgba(255,255,255,.14) !important;
+  border: 1px solid rgba(255,255,255,.40) !important;
+}
+
+/* Checkbox satırına biraz nefes */
+.card input[type="checkbox"] + label{
+  margin-left: 6px !important;
+}
