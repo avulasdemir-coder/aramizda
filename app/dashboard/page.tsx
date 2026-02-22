@@ -8,21 +8,31 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-export default function AppPage() {
+export default function DashboardPage() {
   const [email, setEmail] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const run = async () => {
       const { data } = await supabase.auth.getSession()
-      const userEmail = data.session?.user?.email ?? null
-
-      if (!userEmail) {
+      const user = data.session?.user
+      if (!user) {
         window.location.href = '/'
         return
       }
 
-      setEmail(userEmail)
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('age_range')
+        .eq('id', user.id)
+        .single()
+
+      if (!profile?.age_range) {
+        window.location.href = '/onboarding'
+        return
+      }
+
+      setEmail(user.email ?? null)
       setLoading(false)
     }
 
@@ -38,14 +48,14 @@ export default function AppPage() {
 
   return (
     <div style={{ padding: 40, maxWidth: 900, margin: '0 auto' }}>
-      
-      {/* Header */}
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 40
-      }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 40,
+        }}
+      >
         <h1>Dashboard</h1>
         <div>
           <span style={{ marginRight: 20 }}>{email}</span>
@@ -53,36 +63,21 @@ export default function AppPage() {
         </div>
       </div>
 
-      {/* Content Blocks */}
       <div style={{ display: 'grid', gap: 20 }}>
-
-        <div style={{
-          padding: 20,
-          border: '1px solid #ddd',
-          borderRadius: 8
-        }}>
-          <h2>Alan 1</h2>
-          <p>Buraya içerik gelecek.</p>
+        <div style={{ padding: 20, border: '1px solid #ddd', borderRadius: 8 }}>
+          <h2>Ürün Ara</h2>
+          <p>Buraya arama kutusu gelecek.</p>
         </div>
 
-        <div style={{
-          padding: 20,
-          border: '1px solid #ddd',
-          borderRadius: 8
-        }}>
-          <h2>Alan 2</h2>
-          <p>Buraya içerik gelecek.</p>
+        <div style={{ padding: 20, border: '1px solid #ddd', borderRadius: 8 }}>
+          <h2>Son Deneyimler</h2>
+          <p>Buraya son paylaşımlar gelecek.</p>
         </div>
 
-        <div style={{
-          padding: 20,
-          border: '1px solid #ddd',
-          borderRadius: 8
-        }}>
-          <h2>Alan 3</h2>
-          <p>Buraya içerik gelecek.</p>
+        <div style={{ padding: 20, border: '1px solid #ddd', borderRadius: 8 }}>
+          <h2>Deneyim Ekle</h2>
+          <p>Buraya deneyim ekleme formu gelecek.</p>
         </div>
-
       </div>
     </div>
   )

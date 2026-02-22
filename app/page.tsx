@@ -9,18 +9,16 @@ const supabase = createClient(
 )
 
 export default function Home() {
-
   useEffect(() => {
     const checkUser = async () => {
       const { data } = await supabase.auth.getSession()
-
       const user = data.session?.user
       if (!user) return
 
-      // Profil var mı kontrol et
+      // Profil var mı?
       const { data: profile } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id, age_range')
         .eq('id', user.id)
         .single()
 
@@ -29,8 +27,16 @@ export default function Home() {
         await supabase.from('profiles').insert({
           id: user.id,
           email: user.email,
-          age_range: null
+          age_range: null,
         })
+        window.location.href = '/onboarding'
+        return
+      }
+
+      // Age boşsa onboarding
+      if (!profile.age_range) {
+        window.location.href = '/onboarding'
+        return
       }
 
       window.location.href = '/dashboard'
