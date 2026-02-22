@@ -8,12 +8,7 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-type Product = {
-  id: string
-  name: string
-  brand: string
-  category: string
-}
+type Product = { id: string; name: string; brand: string; category: string }
 
 type ReviewRow = {
   id: string
@@ -53,6 +48,12 @@ export default function DashboardPage() {
   const [q, setQ] = useState('')
   const [products, setProducts] = useState<Product[]>([])
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
+
+  // add product
+  const [pBrand, setPBrand] = useState('')
+  const [pName, setPName] = useState('')
+  const [pCategory, setPCategory] = useState('Cilt Bakım')
+  const [addingProduct, setAddingProduct] = useState(false)
 
   // latest reviews
   const [latest, setLatest] = useState<ReviewRow[]>([])
@@ -119,7 +120,9 @@ export default function DashboardPage() {
         .from('products')
         .select('id,name,brand,category')
         .or(`name.ilike.%${term}%,brand.ilike.%${term}%`)
-        .limit(20)
+        .order('brand', { ascending: true })
+        .order('name', { ascending: true })
+        .limit(30)
 
       if (error) throw error
       setProducts((data as Product[]) ?? [])
@@ -201,21 +204,69 @@ export default function DashboardPage() {
     }
   }
 
-  if (loading) return <div className="page"><div className="container">Yükleniyor…</div></div>
+  const addProduct = async () => {
+    setMsg('')
+    if (!userId) return setMsg('Kullanıcı bulunamadı.')
+    const brand = pBrand.trim()
+    const name = pName.trim()
+    const category = pCategory.trim()
+
+    if (!brand || !name || !category) return setMsg('Marka, ürün adı ve kategori zorunlu.')
+
+    setAddingProduct(true)
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .insert({
+          brand,
+          name,
+          category,
+          created_by: userId,
+        })
+        .select('id,name,brand,category')
+        .single()
+
+      if (error) throw error
+
+      const created = data as Product
+      setSelectedProduct(created)
+      setMsg('Ürün eklendi ✅ (otomatik seçildi)')
+
+      // arama kutusuna da doldur
+      setQ(`${created.brand} ${created.name}`)
+      setProducts([created])
+
+      // form reset
+      setPBrand('')
+      setPName('')
+      setPCategory('Cilt Bakım')
+    } catch (e: any) {
+      setMsg(e?.message ?? 'Ürün eklenemedi.')
+    } finally {
+      setAddingProduct(false)
+    }
+  }
+
+  if (loading)
+    return (
+      <div className="page">
+        <div className="container">Yükleniyor…</div>
+      </div>
+    )
 
   return (
     <div className="page">
       <div className="container">
         <div className="topbar">
           <div className="brand">
-            <div className="pill">
-  <strong>Aramızda</strong>
-</div>
+            <h1>Aramızda</h1>
           </div>
 
           <div className="pill">
             <span className="muted">{email}</span>
-            <button className="btn btn-ghost" onClick={logout}>Çıkış</button>
+            <button className="btn btn-ghost" onClick={logout}>
+              Çıkış
+            </button>
           </div>
         </div>
 
@@ -228,7 +279,7 @@ export default function DashboardPage() {
         ) : null}
 
         <div className="grid section-gap">
-          {/* Left: Search + Latest */}
+          {/* LEFT */}
           <div className="col">
             <div className="card">
               <div className="card-inner">
@@ -239,16 +290,15 @@ export default function DashboardPage() {
                     className="input"
                     value={q}
                     onChange={(e) => setQ(e.target.value)}
-                    placeholder="örn: cerave"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') runSearch()
-                    }}
+                    placeholder="örn: elidor şampuan"
+                    onKeyDown={(e) => e.key === 'Enter' && runSearch()}
                   />
-                  <button className="btn" onClick={runSearch}>Ara</button>
+                  <button className="btn" onClick={runSearch}>
+                    Ara
+                  </button>
                 </div>
 
                 <div className="divider" />
-
                 <div className="muted">{selectedTitle}</div>
 
                 {products.length ? (
@@ -257,13 +307,12 @@ export default function DashboardPage() {
                       <div key={p.id} className="item">
                         <div className="row" style={{ justifyContent: 'space-between' }}>
                           <div>
-                            <div><strong>{p.brand}</strong> — {p.name}</div>
+                            <div>
+                              <strong>{p.brand}</strong> — {p.name}
+                            </div>
                             <div className="muted">{p.category}</div>
                           </div>
-                          <button
-                            className="btn btn-ghost"
-                            onClick={() => setSelectedProduct(p)}
-                          >
+                          <button className="btn btn-ghost" onClick={() => setSelectedProduct(p)}>
                             Seç
                           </button>
                         </div>
@@ -279,6 +328,7 @@ export default function DashboardPage() {
             <div className="card">
               <div className="card-inner">
                 <h2 className="card-title">Son Deneyimler</h2>
+
                 {latest.length ? (
                   <div className="list">
                     {latest.map((r) => {
@@ -289,10 +339,10 @@ export default function DashboardPage() {
                         <div key={r.id} className="item">
                           <div className="row" style={{ justifyContent: 'space-between' }}>
                             <div>
-                              <div><strong>{title}</strong></div>
-                              <div className="muted">
-                                {new Date(r.created_at).toLocaleString('tr-TR')}
+                              <div>
+                                <strong>{title}</strong>
                               </div>
+                              <div className="muted">{new Date(r.created_at).toLocaleString('tr-TR')}</div>
                             </div>
                             <Stars value={score} />
                           </div>
@@ -301,9 +351,7 @@ export default function DashboardPage() {
                           {r.cons ? <div className="section-gap">⚠️ {r.cons}</div> : null}
 
                           <div className="section-gap">
-                            <span className="badge">
-                              {r.would_buy_again ? 'Tekrar alırım' : 'Tekrar almam'}
-                            </span>
+                            <span className="badge">{r.would_buy_again ? 'Tekrar alırım' : 'Tekrar almam'}</span>
                           </div>
                         </div>
                       )
@@ -316,44 +364,66 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Right: Add review */}
+          {/* RIGHT */}
           <div className="col">
             <div className="card">
               <div className="card-inner">
+                <h2 className="card-title">Ürün Ekle</h2>
+                <div className="muted">Bulamadığın ürünü ekleyebilirsin.</div>
+
+                <div className="section-gap">
+                  <label className="muted">Marka</label>
+                  <input className="input" value={pBrand} onChange={(e) => setPBrand(e.target.value)} />
+                </div>
+
+                <div className="section-gap">
+                  <label className="muted">Ürün Adı</label>
+                  <input className="input" value={pName} onChange={(e) => setPName(e.target.value)} />
+                </div>
+
+                <div className="section-gap">
+                  <label className="muted">Kategori</label>
+                  <select className="select" value={pCategory} onChange={(e) => setPCategory(e.target.value)}>
+                    {['Cilt Bakım', 'Saç Bakım', 'Makyaj', 'Güneş Koruma', 'Hijyen', 'Temizlik'].map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="section-gap">
+                  <button className="btn" onClick={addProduct} disabled={addingProduct}>
+                    {addingProduct ? 'Ekleniyor…' : 'Ürünü Ekle'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="card-inner">
                 <h2 className="card-title">Deneyim Ekle</h2>
-                <div className="muted">Önce üstten bir ürün seç.</div>
+                <div className="muted">Önce soldan bir ürün seç.</div>
 
                 <div className="section-gap">
                   <label className="muted">Puan</label>
-                  <select
-                    className="select"
-                    value={rating}
-                    onChange={(e) => setRating(Number(e.target.value))}
-                  >
+                  <select className="select" value={rating} onChange={(e) => setRating(Number(e.target.value))}>
                     {[5, 4, 3, 2, 1].map((n) => (
-                      <option key={n} value={n}>{n}</option>
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
                     ))}
                   </select>
                 </div>
 
                 <div className="section-gap">
                   <label className="muted">Artılar</label>
-                  <textarea
-                    className="textarea"
-                    value={pros}
-                    onChange={(e) => setPros(e.target.value)}
-                    placeholder="Kısa ve net…"
-                  />
+                  <textarea className="textarea" value={pros} onChange={(e) => setPros(e.target.value)} />
                 </div>
 
                 <div className="section-gap">
                   <label className="muted">Eksiler</label>
-                  <textarea
-                    className="textarea"
-                    value={cons}
-                    onChange={(e) => setCons(e.target.value)}
-                    placeholder="Kısa ve net…"
-                  />
+                  <textarea className="textarea" value={cons} onChange={(e) => setCons(e.target.value)} />
                 </div>
 
                 <div className="section-gap row">
@@ -363,7 +433,9 @@ export default function DashboardPage() {
                     checked={wouldBuyAgain}
                     onChange={(e) => setWouldBuyAgain(e.target.checked)}
                   />
-                  <label htmlFor="wba" className="muted">Tekrar alırım</label>
+                  <label htmlFor="wba" className="muted">
+                    Tekrar alırım
+                  </label>
                 </div>
 
                 <div className="section-gap">
@@ -376,10 +448,8 @@ export default function DashboardPage() {
 
             <div className="card">
               <div className="card-inner">
-                <h2 className="card-title">Not</h2>
                 <div className="muted">
-                  Tasarım sonradan kolayca değişir. Şu an önemli olan: ürün arama, deneyim yazma,
-                  listeleme ve çıkış akışı düzgün çalışsın.
+                  Test için: önce ürün ekle veya ara → seç → deneyim gönder → solda “Son Deneyimler”e düşer.
                 </div>
               </div>
             </div>
