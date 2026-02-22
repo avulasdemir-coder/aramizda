@@ -34,81 +34,66 @@ export default function DashboardPage() {
   if (loading) return <div style={{ padding: 40 }}>Yükleniyor...</div>
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f4f6fb' }}>
-      
-      {/* HEADER */}
-      <div style={{
-        background: 'linear-gradient(135deg, #8f5cff, #ff7eb3)',
-        padding: '30px 40px',
-        color: 'white'
-      }}>
-        <div style={{
-          maxWidth: 1000,
-          margin: '0 auto',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center'
-        }}>
-          <h1 style={{ margin: 0, fontWeight: 700 }}>Aramızda</h1>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 15 }}>
-            <span style={{ fontSize: 14 }}>{email}</span>
-            <button
-              onClick={logout}
-              style={{
-                background: 'white',
-                color: '#8f5cff',
-                border: 'none',
-                padding: '8px 14px',
-                borderRadius: 8,
-                cursor: 'pointer',
-                fontWeight: 600
-              }}
-            >
-              Çıkış
-            </button>
-          </div>
-        </div>
-      </div>
+    <div style={{
+      minHeight: '100vh',
+      background: 'linear-gradient(180deg, #7f5af0 0%, #2cb67d 100%)',
+      padding: 30
+    }}>
 
-      {/* MAIN */}
       <div style={{
         maxWidth: 1000,
-        margin: '30px auto',
-        padding: '0 20px'
+        margin: '0 auto'
       }}>
 
-        {/* PRODUCT SEARCH CARD */}
-        <div style={card}>
-          <h2 style={title}>Ürün Ara</h2>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <input
-              placeholder="Örn: Cerave Nemlendirici"
-              style={input}
-            />
-            <button style={primaryButton}>Ara</button>
+        {/* HEADER */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 30,
+          color: 'white'
+        }}>
+          <h1 style={{ margin: 0, fontWeight: 800 }}>Aramızda</h1>
+          <div>
+            <span style={{ marginRight: 15 }}>{email}</span>
+            <button style={logoutBtn} onClick={logout}>Çıkış</button>
           </div>
         </div>
 
-        {/* REVIEWS CARD */}
-        <div style={card}>
-          <h2 style={title}>Son Deneyimler</h2>
+        {/* CARD */}
+        <div style={glassCard}>
+          <h2 style={cardTitle}>Ürün Ara</h2>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <input placeholder="Ürün adı yaz..." style={input} />
+            <button style={gradientBtn}>Ara</button>
+          </div>
+        </div>
+
+        <div style={glassCard}>
+          <h2 style={cardTitle}>Son Deneyimler</h2>
 
           <div style={reviewCard}>
-            <div style={{ fontWeight: 600 }}>Cerave — Nemlendirici</div>
-            <div style={{ fontSize: 13, opacity: .6 }}>⭐ 4 / 5</div>
-            <div style={{ marginTop: 8 }}>Cildi yumuşatıyor ama biraz ağır.</div>
+            <div style={{ fontWeight: 700, fontSize: 16 }}>
+              Cerave Nemlendirici
+            </div>
+            <div style={{ marginTop: 6 }}>
+              ⭐⭐⭐⭐☆
+            </div>
+            <div style={{ marginTop: 10 }}>
+              Cildi yumuşatıyor ama biraz ağır.
+            </div>
 
-            <div style={{ marginTop: 12 }}>
+            <div style={{ marginTop: 15 }}>
               <input placeholder="Yorum yaz..." style={input} />
-              <button style={{ ...primaryButton, marginTop: 8 }}>Gönder</button>
+              <button style={{ ...gradientBtn, marginTop: 8 }}>
+                Gönder
+              </button>
             </div>
           </div>
-
         </div>
 
-        {/* ADD REVIEW CARD */}
-        <div style={card}>
-          <h2 style={title}>Deneyim Ekle</h2>
+        <div style={glassCard}>
+          <h2 style={cardTitle}>Deneyim Ekle</h2>
 
           <select style={input}>
             {[5,4,3,2,1].map(n => <option key={n}>{n}</option>)}
@@ -117,7 +102,9 @@ export default function DashboardPage() {
           <textarea placeholder="Artılar" style={{ ...input, height: 80 }} />
           <textarea placeholder="Eksiler" style={{ ...input, height: 80 }} />
 
-          <button style={{ ...primaryButton, marginTop: 10 }}>Kaydet</button>
+          <button style={{ ...gradientBtn, marginTop: 10 }}>
+            Kaydet
+          </button>
         </div>
 
       </div>
@@ -125,39 +112,52 @@ export default function DashboardPage() {
   )
 }
 
-const card = {
-  background: 'white',
-  padding: 24,
-  borderRadius: 20,
+const glassCard = {
+  background: 'rgba(255,255,255,0.15)',
+  backdropFilter: 'blur(15px)',
+  padding: 25,
+  borderRadius: 25,
   marginBottom: 20,
-  boxShadow: '0 15px 35px rgba(0,0,0,0.06)'
+  color: 'white',
+  boxShadow: '0 15px 35px rgba(0,0,0,0.2)'
 }
 
 const reviewCard = {
-  background: '#faf9ff',
-  padding: 16,
-  borderRadius: 16,
+  background: 'rgba(255,255,255,0.2)',
+  padding: 20,
+  borderRadius: 20,
   marginTop: 10
 }
 
-const title = {
+const cardTitle = {
   marginTop: 0,
-  marginBottom: 16
+  marginBottom: 15,
+  fontWeight: 700
 }
 
 const input = {
   width: '100%',
   padding: 12,
-  borderRadius: 12,
-  border: '1px solid #e0e0e0',
+  borderRadius: 15,
+  border: 'none',
   outline: 'none'
 }
 
-const primaryButton = {
-  background: '#8f5cff',
+const gradientBtn = {
+  background: 'linear-gradient(135deg, #ff7eb3, #ff758c)',
   color: 'white',
   border: 'none',
-  padding: '12px 18px',
+  padding: '12px 20px',
+  borderRadius: 15,
+  cursor: 'pointer',
+  fontWeight: 700
+}
+
+const logoutBtn = {
+  background: 'white',
+  color: '#7f5af0',
+  border: 'none',
+  padding: '8px 14px',
   borderRadius: 12,
   cursor: 'pointer',
   fontWeight: 600
