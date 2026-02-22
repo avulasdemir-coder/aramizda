@@ -10,35 +10,53 @@ const supabase = createClient(
 
 export default function Home() {
   const [email, setEmail] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setEmail(data.user?.email ?? null)
-    })
+    const init = async () => {
+      const { data } = await supabase.auth.getSession()
+      setEmail(data.session?.user?.email ?? null)
+      setLoading(false)
+    }
+
+    init()
+
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setEmail(session?.user?.email ?? null)
+      }
+    )
+
+    return () => {
+      listener.subscription.unsubscribe()
+    }
   }, [])
+
+  const login = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.origin },
+    })
+  }
+
+  const logout = async () => {
+    await supabase.auth.signOut()
+    setEmail(null)
+  }
+
+  if (loading) return <div style={{ padding: 40 }}>Yükleniyor...</div>
 
   return (
     <div style={{ padding: 40 }}>
       {email ? (
         <>
           <h1>Giriş yapıldı: {email}</h1>
-          <button onClick={() => supabase.auth.signOut()}>
-            Çıkış yap
-          </button>
+          <button onClick={logout}>Çıkış yap</button>
         </>
       ) : (
         <>
           <h1>Giriş yapılmadı</h1>
-          <button
-            onClick={() =>
-              supabase.auth.signInWithOAuth({
-                provider: 'google',
-                options: { redirectTo: window.location.origin },
-              })
-            }
-          >
-            Google ile Giriş Yap
-          </button>
+          <button onClick={login}>Google ile Giriş Yap</button>
         </>
       )}
     </div>
