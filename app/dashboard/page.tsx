@@ -8,12 +8,15 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-type Product = { id: string; name: string; brand: string; category: string }
+type Product = {
+  id: string
+  name: string
+  brand: string
+  category: string
+}
 
 type ReviewRow = {
   id: string
-  product_id: string
-  user_id: string
   rating: number | null
   pros: string | null
   cons: string | null
@@ -22,13 +25,22 @@ type ReviewRow = {
   products?: { name: string; brand: string; category: string }[] | null
 }
 
-type ReviewComment = {
-  id: string
-  review_id: string
-  user_id: string
-  parent_id: string | null
-  body: string
-  created_at: string
+function Stars({ value }: { value: number }) {
+  const v = Math.max(0, Math.min(5, Math.round(value)))
+  return (
+    <span className="stars" aria-label={`${v} / 5`}>
+      {Array.from({ length: 5 }).map((_, i) => (
+        <svg
+          key={i}
+          className="star"
+          viewBox="0 0 24 24"
+          fill={i < v ? 'rgba(255, 210, 90, .95)' : 'rgba(255,255,255,.25)'}
+        >
+          <path d="M12 17.3l-5.5 3 1-6.3-4.6-4.5 6.4-1 2.7-5.8 2.7 5.8 6.4 1-4.6 4.5 1 6.3z" />
+        </svg>
+      ))}
+    </span>
+  )
 }
 
 export default function DashboardPage() {
@@ -37,27 +49,20 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [msg, setMsg] = useState<string>('')
 
-  // search
+  // product search
   const [q, setQ] = useState('')
   const [products, setProducts] = useState<Product[]>([])
-  const [searching, setSearching] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
 
-  // reviews
+  // latest reviews
   const [latest, setLatest] = useState<ReviewRow[]>([])
-  const [latestLoading, setLatestLoading] = useState(false)
 
-  // comments
-  const [commentsByReview, setCommentsByReview] = useState<Record<string, ReviewComment[]>>({})
-  const [commentDraft, setCommentDraft] = useState<Record<string, string>>({})
-  const [sendingComment, setSendingComment] = useState<Record<string, boolean>>({})
-
-  // add review
+  // add review form
   const [rating, setRating] = useState<number>(5)
   const [pros, setPros] = useState('')
   const [cons, setCons] = useState('')
-  const [wouldBuyAgain, setWouldBuyAgain] = useState(true)
-  const [savingReview, setSavingReview] = useState(false)
+  const [wouldBuyAgain, setWouldBuyAgain] = useState<boolean>(true)
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     const init = async () => {
@@ -71,7 +76,24 @@ export default function DashboardPage() {
       setUserId(u.id)
       setLoading(false)
     }
+
     init()
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_evt, session) => {
+      const u = session?.user
+      if (!u) {
+        setEmail(null)
+        setUserId(null)
+        window.location.href = '/'
+      } else {
+        setEmail(u.email ?? null)
+        setUserId(u.id)
+      }
+    })
+
+    return () => {
+      listener.subscription.unsubscribe()
+    }
   }, [])
 
   const logout = async () => {
@@ -80,8 +102,8 @@ export default function DashboardPage() {
   }
 
   const selectedTitle = useMemo(() => {
-    if (!selectedProduct) return 'Yok'
-    return `${selectedProduct.brand} — ${selectedProduct.name}`
+    if (!selectedProduct) return 'Seçili ürün: yok'
+    return `Seçili ürün: ${selectedProduct.brand} — ${selectedProduct.name}`
   }, [selectedProduct])
 
   const runSearch = async () => {
@@ -91,42 +113,36 @@ export default function DashboardPage() {
       setProducts([])
       return
     }
-    setSearching(true)
+
     try {
       const { data, error } = await supabase
         .from('products')
         .select('id,name,brand,category')
         .or(`name.ilike.%${term}%,brand.ilike.%${term}%`)
-        .order('name', { ascending: true })
         .limit(20)
 
       if (error) throw error
       setProducts((data as Product[]) ?? [])
     } catch (e: any) {
-      setMsg(e?.message ?? 'Ürün araması başarısız.')
-    } finally {
-      setSearching(false)
+      setMsg(e?.message ?? 'Ürün arama başarısız.')
     }
   }
 
   const loadLatest = async (productId?: string) => {
     setMsg('')
-    setLatestLoading(true)
     try {
       let query = supabase
         .from('reviews')
         .select(
           `
-          id,
-          product_id,
-          user_id,
-          rating,
-          pros,
-          cons,
-          would_buy_again,
-          created_at,
-          products(name,brand,category)
-        `
+            id,
+            rating,
+            pros,
+            cons,
+            would_buy_again,
+            created_at,
+            products(name,brand,category)
+          `
         )
         .order('created_at', { ascending: false })
         .limit(10)
@@ -136,43 +152,10 @@ export default function DashboardPage() {
       const { data, error } = await query
       if (error) throw error
 
-      const rows = (data as ReviewRow[]) ?? []
-      setLatest(rows)
-
-      const ids = rows.map((r) => r.id)
-      await loadComments(ids)
+      setLatest((data as ReviewRow[]) ?? [])
     } catch (e: any) {
       setMsg(e?.message ?? 'Son deneyimler yüklenemedi.')
-    } finally {
-      setLatestLoading(false)
     }
-  }
-
-  const loadComments = async (reviewIds: string[]) => {
-    if (reviewIds.length === 0) {
-      setCommentsByReview({})
-      return
-    }
-    const { data, error } = await supabase
-      .from('review_comments')
-      .select('id,review_id,user_id,parent_id,body,created_at')
-      .in('review_id', reviewIds)
-      .order('created_at', { ascending: true })
-      .limit(300)
-
-    if (error) {
-      setMsg(error.message)
-      return
-    }
-
-    const map: Record<string, ReviewComment[]> = {}
-    for (const rid of reviewIds) map[rid] = []
-    for (const c of (data as ReviewComment[]) ?? []) {
-      if (!map[c.review_id]) map[c.review_id] = []
-      // şimdilik sadece top-level gösteriyoruz
-      if (!c.parent_id) map[c.review_id].push(c)
-    }
-    setCommentsByReview(map)
   }
 
   useEffect(() => {
@@ -187,348 +170,224 @@ export default function DashboardPage() {
 
   const saveReview = async () => {
     setMsg('')
-    if (!userId) return setMsg('Kullanıcı yok.')
-    if (!selectedProduct) return setMsg('Önce ürün seç.')
+    if (!userId) return setMsg('Kullanıcı bulunamadı.')
+    if (!selectedProduct) return setMsg('Önce bir ürün seç.')
 
-    setSavingReview(true)
+    setSaving(true)
     try {
-      const { error } = await supabase.from('reviews').insert({
+      const payload = {
         user_id: userId,
         product_id: selectedProduct.id,
         rating,
         pros: pros.trim() ? pros.trim() : null,
         cons: cons.trim() ? cons.trim() : null,
         would_buy_again: wouldBuyAgain,
-      })
+      }
+
+      const { error } = await supabase.from('reviews').insert(payload)
       if (error) throw error
 
       setPros('')
       setCons('')
-      setRating(5)
       setWouldBuyAgain(true)
+      setRating(5)
 
       await loadLatest(selectedProduct.id)
       setMsg('Kaydedildi ✅')
     } catch (e: any) {
       setMsg(e?.message ?? 'Kaydetme başarısız.')
     } finally {
-      setSavingReview(false)
+      setSaving(false)
     }
   }
 
-  const sendCommentFor = async (reviewId: string) => {
-    setMsg('')
-    if (!userId) return setMsg('Kullanıcı yok.')
-    const body = (commentDraft[reviewId] ?? '').trim()
-    if (!body) return setMsg('Yorum boş olamaz.')
-
-    setSendingComment((p) => ({ ...p, [reviewId]: true }))
-    try {
-      const { error } = await supabase.from('review_comments').insert({
-        review_id: reviewId,
-        user_id: userId,
-        parent_id: null,
-        body,
-      })
-      if (error) throw error
-
-      setCommentDraft((p) => ({ ...p, [reviewId]: '' }))
-      await loadComments([reviewId])
-      setMsg('Yorum eklendi ✅')
-    } catch (e: any) {
-      setMsg(e?.message ?? 'Yorum eklenemedi.')
-    } finally {
-      setSendingComment((p) => ({ ...p, [reviewId]: false }))
-    }
-  }
-
-  if (loading) return <div style={{ padding: 40 }}>Yükleniyor...</div>
+  if (loading) return <div className="page"><div className="container">Yükleniyor…</div></div>
 
   return (
-    <div style={{ padding: 40 }}>
-      <div style={{ maxWidth: 1100, margin: '0 auto' }}>
-        <div style={header}>
-          <h1 style={logo}>Aramızda</h1>
-          <div>
-            <span style={{ marginRight: 15, fontSize: 14, opacity: 0.85 }}>{email}</span>
-            <button style={secondaryBtn} onClick={logout}>
-              Çıkış
-            </button>
+    <div className="page">
+      <div className="container">
+        <div className="topbar">
+          <div className="brand">
+            <div className="pill">
+              <strong>Aramızda</strong>
+              <span className="muted">MVP</span>
+            </div>
+          </div>
+
+          <div className="pill">
+            <span className="muted">{email}</span>
+            <button className="btn btn-ghost" onClick={logout}>Çıkış</button>
           </div>
         </div>
 
         {msg ? (
-          <div style={{ ...card, padding: 14, marginBottom: 18 }}>
-            <div style={{ fontSize: 14 }}>{msg}</div>
+          <div className="card section-gap">
+            <div className="card-inner">
+              <div className="badge">{msg}</div>
+            </div>
           </div>
         ) : null}
 
-        <div style={grid}>
-          {/* LEFT */}
-          <div style={{ display: 'grid', gap: 18 }}>
-            <div style={{ ...card, padding: 22 }}>
-              <h2 style={title}>Ürün Ara</h2>
-              <div style={{ display: 'flex', gap: 10 }}>
-                <input
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  placeholder="Ürün adı / marka..."
-                  style={input}
-                  onKeyDown={(e) => e.key === 'Enter' && runSearch()}
-                />
-                <button style={primaryBtn} onClick={runSearch} disabled={searching}>
-                  {searching ? '...' : 'Ara'}
-                </button>
-              </div>
+        <div className="grid section-gap">
+          {/* Left: Search + Latest */}
+          <div className="col">
+            <div className="card">
+              <div className="card-inner">
+                <h2 className="card-title">Ürün Ara</h2>
 
-              <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
-                {products.map((p) => {
-                  const active = selectedProduct?.id === p.id
-                  return (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => setSelectedProduct(p)}
-                      style={{
-                        ...listItem,
-                        border: active ? '1px solid var(--brand-1)' : '1px solid var(--border)',
-                        background: active ? 'var(--card-2)' : 'rgba(255,255,255,.55)',
-                      }}
-                    >
-                      <div style={{ fontWeight: 700 }}>{p.brand} — {p.name}</div>
-                      <div style={{ fontSize: 12, opacity: 0.7 }}>{p.category}</div>
-                    </button>
-                  )
-                })}
-                {q.trim() && !searching && products.length === 0 ? (
-                  <div style={{ fontSize: 13, opacity: 0.7 }}>Sonuç yok.</div>
-                ) : null}
-              </div>
+                <div className="row">
+                  <input
+                    className="input"
+                    value={q}
+                    onChange={(e) => setQ(e.target.value)}
+                    placeholder="örn: cerave"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') runSearch()
+                    }}
+                  />
+                  <button className="btn" onClick={runSearch}>Ara</button>
+                </div>
 
-              <div style={{ marginTop: 12, fontSize: 13 }}>
-                <b>Seçili ürün:</b> {selectedTitle}
-              </div>
-            </div>
+                <div className="divider" />
 
-            <div style={{ ...card, padding: 22 }}>
-              <h2 style={title}>Deneyim Ekle</h2>
+                <div className="muted">{selectedTitle}</div>
 
-              {!selectedProduct ? (
-                <div style={{ fontSize: 14, opacity: 0.75 }}>Önce üstten ürün seç.</div>
-              ) : (
-                <>
-                  <div style={{ fontSize: 13, marginBottom: 10, opacity: 0.85 }}>
-                    <b>{selectedTitle}</b>
-                  </div>
-
-                  <label style={label}>Puan</label>
-                  <select value={rating} onChange={(e) => setRating(Number(e.target.value))} style={input}>
-                    {[5, 4, 3, 2, 1].map((n) => (
-                      <option key={n} value={n}>
-                        {n}
-                      </option>
-                    ))}
-                  </select>
-
-                  <label style={label}>Artılar</label>
-                  <textarea value={pros} onChange={(e) => setPros(e.target.value)} style={{ ...input, height: 90 }} />
-
-                  <label style={label}>Eksiler</label>
-                  <textarea value={cons} onChange={(e) => setCons(e.target.value)} style={{ ...input, height: 90 }} />
-
-                  <label style={{ ...label, display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <input
-                      type="checkbox"
-                      checked={wouldBuyAgain}
-                      onChange={(e) => setWouldBuyAgain(e.target.checked)}
-                    />
-                    Tekrar alırım
-                  </label>
-
-                  <button style={{ ...primaryBtn, width: '100%' }} onClick={saveReview} disabled={savingReview}>
-                    {savingReview ? 'Kaydediliyor...' : 'Kaydet'}
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* RIGHT */}
-          <div style={{ ...card, padding: 22 }}>
-            <h2 style={title}>Son Deneyimler</h2>
-
-            {latestLoading ? (
-              <div style={{ fontSize: 14, opacity: 0.7 }}>Yükleniyor...</div>
-            ) : latest.length === 0 ? (
-              <div style={{ fontSize: 14, opacity: 0.7 }}>Henüz deneyim yok.</div>
-            ) : (
-              <div style={{ display: 'grid', gap: 12 }}>
-                {latest.map((r) => {
-                  const prod = r.products?.[0]
-                  const comments = commentsByReview[r.id] ?? []
-                  const draft = commentDraft[r.id] ?? ''
-                  const sending = !!sendingComment[r.id]
-
-                  return (
-                    <div key={r.id} style={{ ...innerCard, padding: 16 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
-                        <div style={{ fontWeight: 800 }}>
-                          {prod ? `${prod.brand} — ${prod.name}` : 'Ürün'}
-                        </div>
-                        <div style={{ fontSize: 12, opacity: 0.7 }}>
-                          {new Date(r.created_at).toLocaleString('tr-TR')}
-                        </div>
-                      </div>
-
-                      <div style={{ marginTop: 8, fontSize: 13, opacity: 0.9 }}>
-                        ⭐ {r.rating ?? '-'} / 5 &nbsp; • &nbsp;
-                        {r.would_buy_again ? 'Tekrar alır' : 'Tekrar almaz'}
-                      </div>
-
-                      {r.pros ? <div style={{ marginTop: 10, fontSize: 14 }}><b>Artılar:</b> {r.pros}</div> : null}
-                      {r.cons ? <div style={{ marginTop: 6, fontSize: 14 }}><b>Eksiler:</b> {r.cons}</div> : null}
-
-                      <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
-                        <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8 }}>
-                          Yorumlar ({comments.length})
-                        </div>
-
-                        {comments.length ? (
-                          <div style={{ display: 'grid', gap: 8, marginBottom: 10 }}>
-                            {comments.map((c) => (
-                              <div key={c.id} style={{ ...commentBubble }}>
-                                <div style={{ fontSize: 12, opacity: 0.65, marginBottom: 4 }}>
-                                  {new Date(c.created_at).toLocaleString('tr-TR')}
-                                </div>
-                                <div style={{ fontSize: 14 }}>{c.body}</div>
-                              </div>
-                            ))}
+                {products.length ? (
+                  <div className="list">
+                    {products.map((p) => (
+                      <div key={p.id} className="item">
+                        <div className="row" style={{ justifyContent: 'space-between' }}>
+                          <div>
+                            <div><strong>{p.brand}</strong> — {p.name}</div>
+                            <div className="muted">{p.category}</div>
                           </div>
-                        ) : (
-                          <div style={{ fontSize: 13, opacity: 0.7, marginBottom: 10 }}>Henüz yorum yok.</div>
-                        )}
-
-                        <div style={{ display: 'flex', gap: 10 }}>
-                          <input
-                            value={draft}
-                            onChange={(e) => setCommentDraft((p) => ({ ...p, [r.id]: e.target.value }))}
-                            placeholder="Yorum yaz..."
-                            style={{ ...input, marginBottom: 0 }}
-                          />
                           <button
-                            style={primaryBtn}
-                            onClick={() => sendCommentFor(r.id)}
-                            disabled={sending}
+                            className="btn btn-ghost"
+                            onClick={() => setSelectedProduct(p)}
                           >
-                            {sending ? '...' : 'Gönder'}
+                            Seç
                           </button>
                         </div>
                       </div>
-                    </div>
-                  )
-                })}
+                    ))}
+                  </div>
+                ) : (
+                  <div className="muted">Arama yapınca sonuçlar burada listelenir.</div>
+                )}
               </div>
-            )}
+            </div>
+
+            <div className="card">
+              <div className="card-inner">
+                <h2 className="card-title">Son Deneyimler</h2>
+                {latest.length ? (
+                  <div className="list">
+                    {latest.map((r) => {
+                      const prod = r.products?.[0]
+                      const title = prod ? `${prod.brand} — ${prod.name}` : 'Ürün'
+                      const score = r.rating ?? 0
+                      return (
+                        <div key={r.id} className="item">
+                          <div className="row" style={{ justifyContent: 'space-between' }}>
+                            <div>
+                              <div><strong>{title}</strong></div>
+                              <div className="muted">
+                                {new Date(r.created_at).toLocaleString('tr-TR')}
+                              </div>
+                            </div>
+                            <Stars value={score} />
+                          </div>
+
+                          {r.pros ? <div className="section-gap">✅ {r.pros}</div> : null}
+                          {r.cons ? <div className="section-gap">⚠️ {r.cons}</div> : null}
+
+                          <div className="section-gap">
+                            <span className="badge">
+                              {r.would_buy_again ? 'Tekrar alırım' : 'Tekrar almam'}
+                            </span>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="muted">Henüz deneyim yok.</div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Right: Add review */}
+          <div className="col">
+            <div className="card">
+              <div className="card-inner">
+                <h2 className="card-title">Deneyim Ekle</h2>
+                <div className="muted">Önce üstten bir ürün seç.</div>
+
+                <div className="section-gap">
+                  <label className="muted">Puan</label>
+                  <select
+                    className="select"
+                    value={rating}
+                    onChange={(e) => setRating(Number(e.target.value))}
+                  >
+                    {[5, 4, 3, 2, 1].map((n) => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="section-gap">
+                  <label className="muted">Artılar</label>
+                  <textarea
+                    className="textarea"
+                    value={pros}
+                    onChange={(e) => setPros(e.target.value)}
+                    placeholder="Kısa ve net…"
+                  />
+                </div>
+
+                <div className="section-gap">
+                  <label className="muted">Eksiler</label>
+                  <textarea
+                    className="textarea"
+                    value={cons}
+                    onChange={(e) => setCons(e.target.value)}
+                    placeholder="Kısa ve net…"
+                  />
+                </div>
+
+                <div className="section-gap row">
+                  <input
+                    id="wba"
+                    type="checkbox"
+                    checked={wouldBuyAgain}
+                    onChange={(e) => setWouldBuyAgain(e.target.checked)}
+                  />
+                  <label htmlFor="wba" className="muted">Tekrar alırım</label>
+                </div>
+
+                <div className="section-gap">
+                  <button className="btn" onClick={saveReview} disabled={saving}>
+                    {saving ? 'Kaydediliyor…' : 'Gönder'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="card-inner">
+                <h2 className="card-title">Not</h2>
+                <div className="muted">
+                  Tasarım sonradan kolayca değişir. Şu an önemli olan: ürün arama, deneyim yazma,
+                  listeleme ve çıkış akışı düzgün çalışsın.
+                </div>
+              </div>
+            </div>
           </div>
         </div>
+
       </div>
     </div>
   )
-}
-
-/* ================= STYLES ================= */
-
-const header: React.CSSProperties = {
-  display: 'flex',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  marginBottom: 26,
-}
-
-const logo: React.CSSProperties = {
-  margin: 0,
-  fontWeight: 900,
-  fontSize: 28,
-  background: 'linear-gradient(135deg, var(--brand-1), var(--brand-2))',
-  WebkitBackgroundClip: 'text',
-  WebkitTextFillColor: 'transparent',
-}
-
-const grid: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: '380px 1fr',
-  gap: 18,
-}
-
-const card: React.CSSProperties = {
-  background: 'var(--card)',
-  border: '1px solid var(--border)',
-  borderRadius: 22,
-  boxShadow: 'var(--shadow)',
-  backdropFilter: 'blur(10px)',
-}
-
-const innerCard: React.CSSProperties = {
-  background: 'var(--card-2)',
-  borderRadius: 18,
-  border: '1px solid var(--border)',
-}
-
-const title: React.CSSProperties = {
-  marginTop: 0,
-  marginBottom: 14,
-  fontWeight: 900,
-}
-
-const label: React.CSSProperties = {
-  display: 'block',
-  marginBottom: 6,
-  marginTop: 10,
-  fontSize: 13,
-  fontWeight: 800,
-  opacity: 0.9,
-}
-
-const input: React.CSSProperties = {
-  width: '100%',
-  padding: 12,
-  borderRadius: 16,
-  border: '1px solid var(--border)',
-  outline: 'none',
-  background: 'rgba(255,255,255,.92)',
-  marginBottom: 10,
-}
-
-const primaryBtn: React.CSSProperties = {
-  background: 'linear-gradient(135deg, var(--brand-1), var(--brand-2))',
-  color: 'white',
-  border: 'none',
-  padding: '12px 16px',
-  borderRadius: 16,
-  cursor: 'pointer',
-  fontWeight: 800,
-}
-
-const secondaryBtn: React.CSSProperties = {
-  background: 'transparent',
-  color: 'var(--brand-1)',
-  border: '1px solid var(--brand-1)',
-  padding: '8px 14px',
-  borderRadius: 16,
-  cursor: 'pointer',
-  fontWeight: 700,
-}
-
-const listItem: React.CSSProperties = {
-  textAlign: 'left',
-  padding: 12,
-  borderRadius: 16,
-  cursor: 'pointer',
-}
-
-const commentBubble: React.CSSProperties = {
-  background: 'rgba(255,255,255,.92)',
-  border: '1px solid var(--border)',
-  borderRadius: 16,
-  padding: 12,
 }

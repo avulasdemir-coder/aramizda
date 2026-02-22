@@ -1,27 +1,188 @@
 :root{
-  --brand-1: #8b5cf6;
-  --brand-2: #ec4899;
+  --bg1: #6a5cff;
+  --bg2: #ff4fb4;
+  --bg3: #35d3b3;
 
-  --bg-1: #faf7ff;
-  --bg-2: #ffeaf3;
+  --card: rgba(255,255,255,.20);
+  --card2: rgba(255,255,255,.30);
+  --border: rgba(255,255,255,.28);
 
-  --card: rgba(255,255,255,.75);
-  --card-2: rgba(255,255,255,.9);
-  --border: rgba(20,20,30,.08);
+  --text: rgba(255,255,255,.92);
+  --muted: rgba(255,255,255,.72);
 
-  --text: #1f1f2e;
-  --muted: rgba(20,20,30,.6);
+  --shadow: 0 18px 50px rgba(0,0,0,.18);
+  --shadow2: 0 10px 30px rgba(0,0,0,.16);
 
-  --shadow: 0 20px 50px rgba(139,92,246,.15);
+  --radius: 18px;
 }
+
+html, body { height: 100%; }
 
 body{
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
   color: var(--text);
   background:
-    radial-gradient(circle at 15% 20%, #f4d7ff 0%, transparent 40%),
-    radial-gradient(circle at 85% 10%, #ffd6e8 0%, transparent 40%),
-    linear-gradient(135deg, var(--bg-1), var(--bg-2));
+    radial-gradient(1200px 600px at 15% 15%, color-mix(in srgb, var(--bg2) 35%, transparent), transparent 60%),
+    radial-gradient(1200px 600px at 85% 20%, color-mix(in srgb, var(--bg1) 35%, transparent), transparent 60%),
+    radial-gradient(1200px 600px at 70% 90%, color-mix(in srgb, var(--bg3) 25%, transparent), transparent 60%),
+    linear-gradient(135deg, rgba(106,92,255,.12), rgba(255,79,180,.10));
+}
+
+/* layout */
+.page{
   min-height: 100vh;
+  padding: 28px 18px 60px;
+}
+
+.container{
+  max-width: 980px;
+  margin: 0 auto;
+}
+
+/* cards */
+.card{
+  background: linear-gradient(180deg, var(--card2), var(--card));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.card-inner{ padding: 18px; }
+
+.card-title{
+  margin: 0 0 12px;
+  font-size: 18px;
+  letter-spacing: .2px;
+}
+
+.section-gap{ margin-top: 14px; }
+
+/* header */
+.topbar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.brand{
+  display:flex;
+  align-items:center;
+  gap: 10px;
+}
+
+.brand h1{
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.pill{
+  display:inline-flex;
+  align-items:center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(0,0,0,.12);
+  box-shadow: var(--shadow2);
+}
+
+.muted{ color: var(--muted); font-size: 13px; }
+
+/* form controls */
+.row{ display:flex; gap: 10px; align-items:center; }
+.col{ display:flex; flex-direction:column; gap: 10px; }
+
+.input, .textarea, .select{
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(0,0,0,.14);
+  color: var(--text);
+  padding: 12px 12px;
+  outline: none;
+}
+
+.textarea{ min-height: 92px; resize: vertical; }
+
+.btn{
+  border: 0;
+  border-radius: 14px;
+  padding: 12px 14px;
+  font-weight: 650;
+  color: white;
+  cursor: pointer;
+  background: linear-gradient(135deg, var(--bg1), var(--bg2));
+  box-shadow: var(--shadow2);
+}
+
+.btn:disabled{
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.btn-ghost{
+  background: rgba(0,0,0,.16);
+  border: 1px solid var(--border);
+}
+
+.divider{
+  height: 1px;
+  background: rgba(255,255,255,.16);
+  margin: 10px 0;
+}
+
+.grid{
+  display:grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+@media (min-width: 920px){
+  .grid{ grid-template-columns: 1.2fr .8fr; }
+}
+
+/* list */
+.list{
+  display:flex;
+  flex-direction:column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.item{
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 14px;
+  background: rgba(0,0,0,.10);
+  padding: 12px;
+}
+
+.badge{
+  display:inline-flex;
+  align-items:center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.18);
+  background: rgba(0,0,0,.10);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* stars */
+.stars{
+  display:inline-flex;
+  gap: 2px;
+  vertical-align: middle;
+}
+
+.star{
+  width: 16px;
+  height: 16px;
+  display:inline-block;
+  filter: drop-shadow(0 2px 6px rgba(0,0,0,.20));
 }
