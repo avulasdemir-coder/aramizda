@@ -36,29 +36,36 @@ export default function DashboardPage() {
   return (
     <div style={{
       minHeight: '100vh',
-      background: '#fdf4f6',
-      padding: 30
+      padding: 40,
+      background: `
+        radial-gradient(circle at 20% 30%, #f8d8ff 0%, transparent 40%),
+        radial-gradient(circle at 80% 70%, #ffd6e8 0%, transparent 40%),
+        linear-gradient(135deg, #efe7ff 0%, #ffeaf3 100%)
+      `
     }}>
-      <div style={{ maxWidth: 900, margin: '0 auto' }}>
+
+      <div style={{ maxWidth: 950, margin: '0 auto' }}>
 
         {/* HEADER */}
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          marginBottom: 40
+          marginBottom: 45
         }}>
           <h1 style={{
             margin: 0,
             fontWeight: 800,
-            color: '#e84a78',
-            letterSpacing: -0.5
+            fontSize: 32,
+            background: 'linear-gradient(90deg,#9b5cff,#ff5fa2)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent'
           }}>
             Aramızda
           </h1>
 
           <div>
-            <span style={{ marginRight: 15, fontSize: 14, color: '#555' }}>
+            <span style={{ marginRight: 18, color: '#555', fontSize: 14 }}>
               {email}
             </span>
             <button style={secondaryBtn} onClick={logout}>
@@ -70,7 +77,7 @@ export default function DashboardPage() {
         {/* PRODUCT SEARCH */}
         <div style={card}>
           <h2 style={title}>Ürün Ara</h2>
-          <div style={{ display: 'flex', gap: 10 }}>
+          <div style={{ display: 'flex', gap: 12 }}>
             <input
               placeholder="Örn: Cerave Nemlendirici"
               style={input}
@@ -92,13 +99,13 @@ export default function DashboardPage() {
               ⭐⭐⭐⭐☆
             </div>
 
-            <div style={{ marginTop: 10, color: '#555' }}>
+            <div style={{ marginTop: 12, color: '#555' }}>
               Cildi yumuşatıyor ama biraz ağır.
             </div>
 
-            <div style={{ marginTop: 15 }}>
+            <div style={{ marginTop: 18 }}>
               <input placeholder="Yorum yaz..." style={input} />
-              <button style={{ ...primaryBtn, marginTop: 10 }}>
+              <button style={{ ...primaryBtn, marginTop: 12 }}>
                 Gönder
               </button>
             </div>
@@ -114,10 +121,10 @@ export default function DashboardPage() {
             {[5,4,3,2,1].map(n => <option key={n}>{n}</option>)}
           </select>
 
-          <textarea placeholder="Artılar" style={{ ...input, height: 90 }} />
-          <textarea placeholder="Eksiler" style={{ ...input, height: 90 }} />
+          <textarea placeholder="Artılar" style={{ ...input, height: 100 }} />
+          <textarea placeholder="Eksiler" style={{ ...input, height: 100 }} />
 
-          <button style={{ ...primaryBtn, marginTop: 15 }}>
+          <button style={{ ...primaryBtn, marginTop: 18 }}>
             Kaydet
           </button>
         </div>
@@ -128,52 +135,54 @@ export default function DashboardPage() {
 }
 
 const card = {
-  background: 'white',
-  padding: 28,
-  borderRadius: 24,
-  marginBottom: 25,
-  boxShadow: '0 20px 40px rgba(232,74,120,0.08)'
+  background: 'rgba(255,255,255,0.9)',
+  padding: 30,
+  borderRadius: 28,
+  marginBottom: 30,
+  backdropFilter: 'blur(10px)',
+  boxShadow: '0 20px 45px rgba(155,92,255,0.12)'
 }
 
 const reviewCard = {
-  background: '#fff6f8',
-  padding: 20,
-  borderRadius: 20,
-  marginTop: 15
+  background: 'rgba(255,255,255,0.7)',
+  padding: 22,
+  borderRadius: 22,
+  marginTop: 18
 }
 
 const title = {
   marginTop: 0,
-  marginBottom: 18,
+  marginBottom: 20,
   fontWeight: 700,
   color: '#333'
 }
 
 const input = {
   width: '100%',
-  padding: 14,
-  borderRadius: 16,
-  border: '1px solid #f1d7dd',
+  padding: 16,
+  borderRadius: 20,
+  border: '1px solid #f0d6ff',
   outline: 'none',
-  fontSize: 14
+  fontSize: 14,
+  background: 'white'
 }
 
 const primaryBtn = {
-  background: '#e84a78',
+  background: 'linear-gradient(135deg,#9b5cff,#ff5fa2)',
   color: 'white',
   border: 'none',
-  padding: '14px 22px',
-  borderRadius: 18,
+  padding: '14px 24px',
+  borderRadius: 22,
   cursor: 'pointer',
   fontWeight: 700
 }
 
 const secondaryBtn = {
   background: 'transparent',
-  color: '#e84a78',
-  border: '1px solid #e84a78',
-  padding: '8px 16px',
-  borderRadius: 16,
+  color: '#9b5cff',
+  border: '1px solid #9b5cff',
+  padding: '8px 18px',
+  borderRadius: 20,
   cursor: 'pointer',
   fontWeight: 600
 }
