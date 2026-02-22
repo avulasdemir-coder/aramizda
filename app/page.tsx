@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { createClient } from '@supabase/supabase-js'
 
 const supabase = createClient(
@@ -9,56 +9,27 @@ const supabase = createClient(
 )
 
 export default function Home() {
-  const [email, setEmail] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-
   useEffect(() => {
-    const init = async () => {
+    const checkUser = async () => {
       const { data } = await supabase.auth.getSession()
-      setEmail(data.session?.user?.email ?? null)
-      setLoading(false)
-    }
-
-    init()
-
-    const { data: listener } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setEmail(session?.user?.email ?? null)
+      if (data.session?.user) {
+        window.location.href = '/app'
       }
-    )
-
-    return () => {
-      listener.subscription.unsubscribe()
     }
+    checkUser()
   }, [])
 
   const login = async () => {
     await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.origin },
+      options: { redirectTo: window.location.origin + '/app' },
     })
   }
 
-  const logout = async () => {
-    await supabase.auth.signOut()
-    setEmail(null)
-  }
-
-  if (loading) return <div style={{ padding: 40 }}>Yükleniyor...</div>
-
   return (
     <div style={{ padding: 40 }}>
-      {email ? (
-        <>
-          <h1>Giriş yapıldı: {email}</h1>
-          <button onClick={logout}>Çıkış yap</button>
-        </>
-      ) : (
-        <>
-          <h1>Giriş yapılmadı</h1>
-          <button onClick={login}>Google ile Giriş Yap</button>
-        </>
-      )}
+      <h1>Giriş yapılmadı</h1>
+      <button onClick={login}>Google ile Giriş Yap</button>
     </div>
   )
 }
