@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 
 const supabase = createClient(
@@ -8,50 +8,9 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-type Product = {
-  id: string
-  name: string
-  brand: string
-  category: string
-}
-
-type ReviewRow = {
-  id: string
-  rating: number | null
-  pros: string | null
-  cons: string | null
-  would_buy_again: boolean | null
-  created_at: string
-  products?: { name: string; brand: string; category: string }[] | null
-}
-
-type ReviewComment = {
-  id: string
-  review_id: string
-  user_id: string
-  parent_id: string | null
-  body: string
-  created_at: string
-}
-
 export default function DashboardPage() {
   const [email, setEmail] = useState<string | null>(null)
-  const [userId, setUserId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [msg, setMsg] = useState<string>('')
-
-  const [q, setQ] = useState('')
-  const [products, setProducts] = useState<Product[]>([])
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
-
-  const [latest, setLatest] = useState<ReviewRow[]>([])
-  const [commentsByReview, setCommentsByReview] = useState<Record<string, ReviewComment[]>>({})
-  const [commentDraftByReview, setCommentDraftByReview] = useState<Record<string, string>>({})
-
-  const [rating, setRating] = useState<number>(5)
-  const [pros, setPros] = useState('')
-  const [cons, setCons] = useState('')
-  const [wouldBuyAgain, setWouldBuyAgain] = useState<boolean>(true)
 
   useEffect(() => {
     const init = async () => {
@@ -61,9 +20,7 @@ export default function DashboardPage() {
         window.location.href = '/'
         return
       }
-
       setEmail(u.email ?? null)
-      setUserId(u.id)
       setLoading(false)
     }
     init()
@@ -74,232 +31,93 @@ export default function DashboardPage() {
     window.location.href = '/'
   }
 
-  const selectedTitle = useMemo(() => {
-    if (!selectedProduct) return ''
-    return `${selectedProduct.brand} — ${selectedProduct.name}`
-  }, [selectedProduct])
-
-  const runSearch = async () => {
-    const term = q.trim()
-    if (!term) return
-
-    const { data } = await supabase
-      .from('products')
-      .select('id,name,brand,category')
-      .or(`name.ilike.%${term}%,brand.ilike.%${term}%`)
-      .limit(20)
-
-    setProducts((data as Product[]) ?? [])
-  }
-
-  const loadLatest = async () => {
-    const { data } = await supabase
-      .from('reviews')
-      .select(`
-        id,
-        rating,
-        pros,
-        cons,
-        would_buy_again,
-        created_at,
-        products(name,brand,category)
-      `)
-      .order('created_at', { ascending: false })
-      .limit(10)
-
-    const rows = (data as ReviewRow[]) ?? []
-    setLatest(rows)
-
-    const ids = rows.map(r => r.id)
-    if (ids.length) {
-      const { data: c } = await supabase
-        .from('review_comments')
-        .select('*')
-        .in('review_id', ids)
-        .order('created_at', { ascending: true })
-
-      const map: Record<string, ReviewComment[]> = {}
-      ids.forEach(id => (map[id] = []))
-      ;(c as ReviewComment[]).forEach(cm => {
-        map[cm.review_id].push(cm)
-      })
-      setCommentsByReview(map)
-    }
-  }
-
-  useEffect(() => {
-    if (!loading) loadLatest()
-  }, [loading])
-
-  const saveReview = async () => {
-    if (!userId || !selectedProduct) return
-
-    await supabase.from('reviews').insert({
-      user_id: userId,
-      product_id: selectedProduct.id,
-      rating,
-      pros,
-      cons,
-      would_buy_again: wouldBuyAgain,
-    })
-
-    setPros('')
-    setCons('')
-    setRating(5)
-    setWouldBuyAgain(true)
-    loadLatest()
-    setMsg('Kaydedildi ✅')
-  }
-
-  const sendComment = async (reviewId: string) => {
-    if (!userId) return
-    const body = commentDraftByReview[reviewId]
-    if (!body) return
-
-    await supabase.from('review_comments').insert({
-      review_id: reviewId,
-      user_id: userId,
-      body,
-    })
-
-    setCommentDraftByReview(prev => ({ ...prev, [reviewId]: '' }))
-    loadLatest()
-  }
-
   if (loading) return <div style={{ padding: 40 }}>Yükleniyor...</div>
 
   return (
-    <div style={{ background: '#f5f6f8', minHeight: '100vh', padding: 30 }}>
-      <div style={{ maxWidth: 900, margin: '0 auto' }}>
-
-        {/* HEADER */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 30 }}>
-          <h1 style={{ margin: 0 }}>Aramızda</h1>
-          <div>
-            <span style={{ marginRight: 12, fontSize: 14 }}>{email}</span>
-            <button onClick={logout}>Çıkış</button>
+    <div style={{ minHeight: '100vh', background: '#f4f6fb' }}>
+      
+      {/* HEADER */}
+      <div style={{
+        background: 'linear-gradient(135deg, #8f5cff, #ff7eb3)',
+        padding: '30px 40px',
+        color: 'white'
+      }}>
+        <div style={{
+          maxWidth: 1000,
+          margin: '0 auto',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <h1 style={{ margin: 0, fontWeight: 700 }}>Aramızda</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 15 }}>
+            <span style={{ fontSize: 14 }}>{email}</span>
+            <button
+              onClick={logout}
+              style={{
+                background: 'white',
+                color: '#8f5cff',
+                border: 'none',
+                padding: '8px 14px',
+                borderRadius: 8,
+                cursor: 'pointer',
+                fontWeight: 600
+              }}
+            >
+              Çıkış
+            </button>
           </div>
         </div>
+      </div>
 
-        {msg && (
-          <div style={{
-            background: '#e6f7ee',
-            padding: 12,
-            borderRadius: 12,
-            marginBottom: 20
-          }}>
-            {msg}
-          </div>
-        )}
+      {/* MAIN */}
+      <div style={{
+        maxWidth: 1000,
+        margin: '30px auto',
+        padding: '0 20px'
+      }}>
 
         {/* PRODUCT SEARCH CARD */}
         <div style={card}>
-          <h2>Ürün Ara</h2>
+          <h2 style={title}>Ürün Ara</h2>
           <div style={{ display: 'flex', gap: 10 }}>
             <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Örn: Cerave"
+              placeholder="Örn: Cerave Nemlendirici"
               style={input}
             />
-            <button onClick={runSearch}>Ara</button>
+            <button style={primaryButton}>Ara</button>
           </div>
-
-          <div style={{ marginTop: 10 }}>
-            {products.map(p => (
-              <div
-                key={p.id}
-                onClick={() => setSelectedProduct(p)}
-                style={{
-                  padding: 8,
-                  cursor: 'pointer',
-                  borderBottom: '1px solid #eee'
-                }}
-              >
-                {p.brand} — {p.name}
-              </div>
-            ))}
-          </div>
-
-          {selectedProduct && (
-            <div style={{ marginTop: 10, fontSize: 14 }}>
-              Seçili: {selectedTitle}
-            </div>
-          )}
         </div>
 
         {/* REVIEWS CARD */}
         <div style={card}>
-          <h2>Son Deneyimler</h2>
+          <h2 style={title}>Son Deneyimler</h2>
 
-          {latest.map(r => {
-            const prod = r.products?.[0]
-            return (
-              <div key={r.id} style={reviewCard}>
-                <div style={{ fontWeight: 600 }}>
-                  {prod?.brand} — {prod?.name}
-                </div>
-                <div style={{ fontSize: 13, opacity: .6 }}>
-                  {new Date(r.created_at).toLocaleString()}
-                </div>
+          <div style={reviewCard}>
+            <div style={{ fontWeight: 600 }}>Cerave — Nemlendirici</div>
+            <div style={{ fontSize: 13, opacity: .6 }}>⭐ 4 / 5</div>
+            <div style={{ marginTop: 8 }}>Cildi yumuşatıyor ama biraz ağır.</div>
 
-                <div style={{ marginTop: 8 }}>
-                  ⭐ {r.rating} | Tekrar alır mı: {r.would_buy_again ? 'Evet' : 'Hayır'}
-                </div>
+            <div style={{ marginTop: 12 }}>
+              <input placeholder="Yorum yaz..." style={input} />
+              <button style={{ ...primaryButton, marginTop: 8 }}>Gönder</button>
+            </div>
+          </div>
 
-                {r.pros && <div>Artı: {r.pros}</div>}
-                {r.cons && <div>Eksi: {r.cons}</div>}
-
-                {/* COMMENTS */}
-                <div style={{ marginTop: 10 }}>
-                  {(commentsByReview[r.id] || []).map(c => (
-                    <div key={c.id} style={commentBox}>
-                      {c.body}
-                    </div>
-                  ))}
-
-                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                    <input
-                      value={commentDraftByReview[r.id] || ''}
-                      onChange={(e) =>
-                        setCommentDraftByReview(prev => ({
-                          ...prev,
-                          [r.id]: e.target.value
-                        }))
-                      }
-                      placeholder="Yorum yaz..."
-                      style={input}
-                    />
-                    <button onClick={() => sendComment(r.id)}>Gönder</button>
-                  </div>
-                </div>
-              </div>
-            )
-          })}
         </div>
 
         {/* ADD REVIEW CARD */}
         <div style={card}>
-          <h2>Deneyim Ekle</h2>
+          <h2 style={title}>Deneyim Ekle</h2>
 
-          {!selectedProduct ? (
-            <div>Önce ürün seç.</div>
-          ) : (
-            <>
-              <div style={{ marginBottom: 10 }}>
-                {selectedTitle}
-              </div>
+          <select style={input}>
+            {[5,4,3,2,1].map(n => <option key={n}>{n}</option>)}
+          </select>
 
-              <select value={rating} onChange={e => setRating(Number(e.target.value))} style={input}>
-                {[5,4,3,2,1].map(n => <option key={n}>{n}</option>)}
-              </select>
+          <textarea placeholder="Artılar" style={{ ...input, height: 80 }} />
+          <textarea placeholder="Eksiler" style={{ ...input, height: 80 }} />
 
-              <textarea value={pros} onChange={e => setPros(e.target.value)} placeholder="Artılar" style={input} />
-              <textarea value={cons} onChange={e => setCons(e.target.value)} placeholder="Eksiler" style={input} />
-
-              <button onClick={saveReview} style={{ marginTop: 10 }}>Kaydet</button>
-            </>
-          )}
+          <button style={{ ...primaryButton, marginTop: 10 }}>Kaydet</button>
         </div>
 
       </div>
@@ -308,31 +126,39 @@ export default function DashboardPage() {
 }
 
 const card = {
-  background: '#fff',
-  padding: 20,
-  borderRadius: 16,
+  background: 'white',
+  padding: 24,
+  borderRadius: 20,
   marginBottom: 20,
-  boxShadow: '0 6px 20px rgba(0,0,0,0.05)'
+  boxShadow: '0 15px 35px rgba(0,0,0,0.06)'
 }
 
 const reviewCard = {
-  background: '#fafafa',
-  padding: 14,
-  borderRadius: 12,
-  marginTop: 12
+  background: '#faf9ff',
+  padding: 16,
+  borderRadius: 16,
+  marginTop: 10
 }
 
-const commentBox = {
-  background: '#fff',
-  padding: 8,
-  borderRadius: 8,
-  marginTop: 6,
-  fontSize: 14
+const title = {
+  marginTop: 0,
+  marginBottom: 16
 }
 
 const input = {
   width: '100%',
-  padding: 10,
-  borderRadius: 10,
-  border: '1px solid #ddd'
+  padding: 12,
+  borderRadius: 12,
+  border: '1px solid #e0e0e0',
+  outline: 'none'
+}
+
+const primaryButton = {
+  background: '#8f5cff',
+  color: 'white',
+  border: 'none',
+  padding: '12px 18px',
+  borderRadius: 12,
+  cursor: 'pointer',
+  fontWeight: 600
 }
