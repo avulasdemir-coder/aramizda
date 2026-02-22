@@ -37,10 +37,53 @@ export default function AppPage() {
   if (loading) return <div style={{ padding: 40 }}>Yükleniyor...</div>
 
   return (
-    <div style={{ padding: 40 }}>
-      <h1>Uygulama Alanı</h1>
-      <p>Giriş yapan: {email}</p>
-      <button onClick={logout}>Çıkış yap</button>
+    <div style={{ padding: 40, maxWidth: 900, margin: '0 auto' }}>
+      
+      {/* Header */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 40
+      }}>
+        <h1>Dashboard</h1>
+        <div>
+          <span style={{ marginRight: 20 }}>{email}</span>
+          <button onClick={logout}>Çıkış yap</button>
+        </div>
+      </div>
+
+      {/* Content Blocks */}
+      <div style={{ display: 'grid', gap: 20 }}>
+
+        <div style={{
+          padding: 20,
+          border: '1px solid #ddd',
+          borderRadius: 8
+        }}>
+          <h2>Alan 1</h2>
+          <p>Buraya içerik gelecek.</p>
+        </div>
+
+        <div style={{
+          padding: 20,
+          border: '1px solid #ddd',
+          borderRadius: 8
+        }}>
+          <h2>Alan 2</h2>
+          <p>Buraya içerik gelecek.</p>
+        </div>
+
+        <div style={{
+          padding: 20,
+          border: '1px solid #ddd',
+          borderRadius: 8
+        }}>
+          <h2>Alan 3</h2>
+          <p>Buraya içerik gelecek.</p>
+        </div>
+
+      </div>
     </div>
   )
 }
