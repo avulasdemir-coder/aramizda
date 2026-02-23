@@ -18,6 +18,7 @@ type Product = {
 
 type ReviewRow = {
   id: string
+  user_id: string
   rating: number | null
   pros: string | null
   cons: string | null
@@ -32,6 +33,11 @@ type CommentRow = {
   user_id: string
   content: string
   created_at: string
+}
+
+type ProfileRow = {
+  id: string
+  nickname: string
 }
 
 function slugify(s: string) {
@@ -68,10 +74,14 @@ function Stars({ value }: { value: number }) {
 
 export default function DashboardPage() {
   const [userId, setUserId] = useState<string | null>(null)
+  const [nickname, setNickname] = useState<string>('') // header
   const [loading, setLoading] = useState(true)
   const [msg, setMsg] = useState('')
 
-  // search
+  // userId -> nickname map (for reviews/comments)
+  const [nickById, setNickById] = useState<Record<string, string>>({})
+
+  // product search
   const [q, setQ] = useState('')
   const [products, setProducts] = useState<Product[]>([])
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
@@ -83,10 +93,10 @@ export default function DashboardPage() {
   const [pImageFile, setPImageFile] = useState<File | null>(null)
   const [addingProduct, setAddingProduct] = useState(false)
 
-  // reviews
+  // latest reviews
   const [latest, setLatest] = useState<ReviewRow[]>([])
 
-  // add review
+  // add review form
   const [rating, setRating] = useState<number>(5)
   const [pros, setPros] = useState('')
   const [cons, setCons] = useState('')
@@ -100,34 +110,83 @@ export default function DashboardPage() {
   const [loadingComments, setLoadingComments] = useState<Record<string, boolean>>({})
   const [sendingComment, setSendingComment] = useState<Record<string, boolean>>({})
 
+  // ---------- helpers ----------
+  const fetchNicknames = async (ids: string[]) => {
+    const uniq = Array.from(new Set(ids.filter(Boolean)))
+    if (!uniq.length) return
+
+    // already have?
+    const missing = uniq.filter((id) => !nickById[id])
+    if (!missing.length) return
+
+    const { data, error } = await supabase.from('profiles').select('id,nickname').in('id', missing)
+    if (error) throw error
+
+    const rows = (data as ProfileRow[]) ?? []
+    setNickById((prev) => {
+      const next = { ...prev }
+      for (const r of rows) next[r.id] = r.nickname
+      return next
+    })
+  }
+
   // --- Auth bootstrap (no email shown) ---
   useEffect(() => {
     const init = async () => {
-      const { data } = await supabase.auth.getSession()
-      const u = data.session?.user
-      if (!u) {
-        window.location.href = '/'
-        return
+      try {
+        const { data } = await supabase.auth.getSession()
+        const u = data.session?.user
+
+        if (!u) {
+          window.location.href = '/'
+          return
+        }
+
+        setUserId(u.id)
+
+        // own nickname for header
+        const { data: prof, error: pe } = await supabase
+          .from('profiles')
+          .select('id,nickname')
+          .eq('id', u.id)
+          .single()
+
+        if (pe) throw pe
+
+        setNickname(prof?.nickname ?? 'Kullanıcı')
+        setNickById((prev) => ({ ...prev, [u.id]: prof?.nickname ?? 'Kullanıcı' }))
+
+        setLoading(false)
+      } catch (e: any) {
+        setMsg(e?.message ?? 'Oturum başlatılamadı.')
+        setLoading(false)
       }
-      setUserId(u.id)
-      setLoading(false)
     }
 
     init()
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_evt, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange(async (_evt, session) => {
       const u = session?.user
       if (!u) {
         setUserId(null)
         window.location.href = '/'
-      } else {
-        setUserId(u.id)
+        return
+      }
+
+      setUserId(u.id)
+
+      // refresh header nickname if needed
+      const { data: prof } = await supabase.from('profiles').select('nickname').eq('id', u.id).single()
+      if (prof?.nickname) {
+        setNickname(prof.nickname)
+        setNickById((prev) => ({ ...prev, [u.id]: prof.nickname }))
       }
     })
 
     return () => {
       listener.subscription.unsubscribe()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const logout = async () => {
@@ -140,6 +199,7 @@ export default function DashboardPage() {
     return `Seçili ürün: ${selectedProduct.brand} — ${selectedProduct.name}`
   }, [selectedProduct])
 
+  // --- Product search ---
   const runSearch = async () => {
     setMsg('')
     const term = q.trim()
@@ -164,6 +224,7 @@ export default function DashboardPage() {
     }
   }
 
+  // --- Latest reviews ---
   const loadLatest = async (productId?: string) => {
     setMsg('')
     try {
@@ -172,6 +233,7 @@ export default function DashboardPage() {
         .select(
           `
           id,
+          user_id,
           rating,
           pros,
           cons,
@@ -188,7 +250,11 @@ export default function DashboardPage() {
       const { data, error } = await query
       if (error) throw error
 
-      setLatest((data as ReviewRow[]) ?? [])
+      const rows = ((data as ReviewRow[]) ?? []).map((r) => ({ ...r }))
+      setLatest(rows)
+
+      // fetch nicknames for review authors
+      await fetchNicknames(rows.map((r) => r.user_id))
     } catch (e: any) {
       setMsg(e?.message ?? 'Son deneyimler yüklenemedi.')
     }
@@ -204,6 +270,7 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProduct?.id, loading])
 
+  // --- Save review ---
   const saveReview = async () => {
     setMsg('')
     if (!userId) return setMsg('Kullanıcı bulunamadı.')
@@ -237,6 +304,7 @@ export default function DashboardPage() {
     }
   }
 
+  // --- Add product ---
   const findDuplicateProduct = async (brand: string, name: string) => {
     const { data, error } = await supabase
       .from('products')
@@ -352,7 +420,12 @@ export default function DashboardPage() {
         .limit(50)
 
       if (error) throw error
-      setCommentsByReview((s) => ({ ...s, [reviewId]: (data as CommentRow[]) ?? [] }))
+
+      const rows = (data as CommentRow[]) ?? []
+      setCommentsByReview((s) => ({ ...s, [reviewId]: rows }))
+
+      // fetch nicknames for comment authors
+      await fetchNicknames(rows.map((c) => c.user_id))
     } catch (e: any) {
       setMsg(e?.message ?? 'Yorumlar yüklenemedi.')
     } finally {
@@ -412,7 +485,8 @@ export default function DashboardPage() {
             <h1>Aramızda</h1>
           </div>
 
-          <div className="pill">
+          <div className="pill" style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <span className="badge">{nickname || 'Kullanıcı'}</span>
             <button className="btn btn-ghost" onClick={logout}>
               Çıkış
             </button>
@@ -516,6 +590,7 @@ export default function DashboardPage() {
                       const isLoading = loadingComments[r.id] ?? false
                       const isSending = sendingComment[r.id] ?? false
                       const draft = commentDraftByReview[r.id] ?? ''
+                      const authorNick = nickById[r.user_id] ?? 'Kullanıcı'
 
                       return (
                         <div key={r.id} className="item">
@@ -524,7 +599,9 @@ export default function DashboardPage() {
                               <div>
                                 <strong>{title}</strong>
                               </div>
-                              <div className="muted">{new Date(r.created_at).toLocaleString('tr-TR')}</div>
+                              <div className="muted">
+                                {authorNick} • {new Date(r.created_at).toLocaleString('tr-TR')}
+                              </div>
                             </div>
                             <Stars value={score} />
                           </div>
@@ -548,14 +625,20 @@ export default function DashboardPage() {
                                 <div className="muted">Yorumlar yükleniyor…</div>
                               ) : comments.length ? (
                                 <div className="list" style={{ marginTop: 10 }}>
-                                  {comments.map((c) => (
-                                    <div key={c.id} className="item" style={{ padding: 12 }}>
-                                      <div style={{ fontSize: 14 }}>{c.content}</div>
-                                      <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
-                                        {new Date(c.created_at).toLocaleString('tr-TR')}
+                                  {comments.map((c) => {
+                                    const cnick = nickById[c.user_id] ?? 'Kullanıcı'
+                                    return (
+                                      <div key={c.id} className="item" style={{ padding: 12 }}>
+                                        <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 6 }}>
+                                          <strong>{cnick}</strong>
+                                        </div>
+                                        <div style={{ fontSize: 14 }}>{c.content}</div>
+                                        <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+                                          {new Date(c.created_at).toLocaleString('tr-TR')}
+                                        </div>
                                       </div>
-                                    </div>
-                                  ))}
+                                    )
+                                  })}
                                 </div>
                               ) : (
                                 <div className="muted" style={{ marginTop: 10 }}>
