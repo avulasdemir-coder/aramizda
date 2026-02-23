@@ -324,3 +324,25 @@ body{
 .card input[type="checkbox"] + label{
   margin-left: 6px !important;
 }
+/* ===== FIX: overflow / sağa taşma ===== */
+
+.row{
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;      /* taşarsa alt satıra düşsün */
+}
+
+.row > *{
+  min-width: 0;         /* flex taşmasını engeller */
+}
+
+.input, .textarea, .select{
+  max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+@media (max-width: 640px){
+  .btn{ width: 100%; }  /* mobilde butonlar tam genişlik */
+}
