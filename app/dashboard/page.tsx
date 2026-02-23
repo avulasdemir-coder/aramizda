@@ -1,5 +1,7 @@
 'use client'
 
+console.log("DASHBOARD FILE ACTIVE");
+
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 
