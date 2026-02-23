@@ -26,6 +26,14 @@ type ReviewRow = {
   products?: { name: string; brand: string; category: string; image_url?: string | null }[] | null
 }
 
+type CommentRow = {
+  id: string
+  review_id: string
+  user_id: string
+  content: string
+  created_at: string
+}
+
 function slugify(s: string) {
   return s
     .trim()
@@ -85,7 +93,14 @@ export default function DashboardPage() {
   const [wouldBuyAgain, setWouldBuyAgain] = useState(true)
   const [saving, setSaving] = useState(false)
 
-  // --- Auth bootstrap (NO EMAIL SHOWN ANYWHERE) ---
+  // comments UI state
+  const [openReviewId, setOpenReviewId] = useState<string | null>(null)
+  const [commentsByReview, setCommentsByReview] = useState<Record<string, CommentRow[]>>({})
+  const [commentDraftByReview, setCommentDraftByReview] = useState<Record<string, string>>({})
+  const [loadingComments, setLoadingComments] = useState<Record<string, boolean>>({})
+  const [sendingComment, setSendingComment] = useState<Record<string, boolean>>({})
+
+  // --- Auth bootstrap (no email shown) ---
   useEffect(() => {
     const init = async () => {
       const { data } = await supabase.auth.getSession()
@@ -192,7 +207,7 @@ export default function DashboardPage() {
   const saveReview = async () => {
     setMsg('')
     if (!userId) return setMsg('Kullanıcı bulunamadı.')
-    if (!selectedProduct) return setMsg('Önce bir ürün seç.')
+    if (!selectedProduct) return setMsg('Önce soldan bir ürün seç.')
 
     setSaving(true)
     try {
@@ -324,6 +339,61 @@ export default function DashboardPage() {
     }
   }
 
+  // --- Comments ---
+  const loadComments = async (reviewId: string) => {
+    setMsg('')
+    setLoadingComments((s) => ({ ...s, [reviewId]: true }))
+    try {
+      const { data, error } = await supabase
+        .from('review_comments')
+        .select('id,review_id,user_id,content,created_at')
+        .eq('review_id', reviewId)
+        .order('created_at', { ascending: true })
+        .limit(50)
+
+      if (error) throw error
+      setCommentsByReview((s) => ({ ...s, [reviewId]: (data as CommentRow[]) ?? [] }))
+    } catch (e: any) {
+      setMsg(e?.message ?? 'Yorumlar yüklenemedi.')
+    } finally {
+      setLoadingComments((s) => ({ ...s, [reviewId]: false }))
+    }
+  }
+
+  const toggleComments = async (reviewId: string) => {
+    if (openReviewId === reviewId) {
+      setOpenReviewId(null)
+      return
+    }
+    setOpenReviewId(reviewId)
+    if (!commentsByReview[reviewId]) await loadComments(reviewId)
+  }
+
+  const sendComment = async (reviewId: string) => {
+    setMsg('')
+    if (!userId) return setMsg('Kullanıcı bulunamadı.')
+    const text = (commentDraftByReview[reviewId] ?? '').trim()
+    if (!text) return setMsg('Yorum boş olamaz.')
+
+    setSendingComment((s) => ({ ...s, [reviewId]: true }))
+    try {
+      const { error } = await supabase.from('review_comments').insert({
+        review_id: reviewId,
+        user_id: userId,
+        content: text,
+      })
+      if (error) throw error
+
+      setCommentDraftByReview((s) => ({ ...s, [reviewId]: '' }))
+      await loadComments(reviewId)
+      setMsg('Yorum eklendi ✅')
+    } catch (e: any) {
+      setMsg(e?.message ?? 'Yorum eklenemedi.')
+    } finally {
+      setSendingComment((s) => ({ ...s, [reviewId]: false }))
+    }
+  }
+
   if (loading) {
     return (
       <div className="page">
@@ -331,6 +401,8 @@ export default function DashboardPage() {
       </div>
     )
   }
+
+  const reviewDisabled = !selectedProduct
 
   return (
     <div className="page">
@@ -439,6 +511,12 @@ export default function DashboardPage() {
                       const prod = r.products?.[0]
                       const title = prod ? `${prod.brand} — ${prod.name}` : 'Ürün'
                       const score = r.rating ?? 0
+                      const isOpen = openReviewId === r.id
+                      const comments = commentsByReview[r.id] ?? []
+                      const isLoading = loadingComments[r.id] ?? false
+                      const isSending = sendingComment[r.id] ?? false
+                      const draft = commentDraftByReview[r.id] ?? ''
+
                       return (
                         <div key={r.id} className="item">
                           <div className="row" style={{ justifyContent: 'space-between' }}>
@@ -454,9 +532,56 @@ export default function DashboardPage() {
                           {r.pros ? <div className="section-gap">✅ {r.pros}</div> : null}
                           {r.cons ? <div className="section-gap">⚠️ {r.cons}</div> : null}
 
-                          <div className="section-gap">
+                          <div className="section-gap row" style={{ justifyContent: 'space-between' }}>
                             <span className="badge">{r.would_buy_again ? 'Tekrar alırım' : 'Tekrar almam'}</span>
+
+                            <button className="btn btn-ghost" onClick={() => toggleComments(r.id)}>
+                              {isOpen ? 'Yorumları gizle' : `Yorumlar (${comments.length})`}
+                            </button>
                           </div>
+
+                          {isOpen ? (
+                            <div className="section-gap">
+                              <div className="divider" />
+
+                              {isLoading ? (
+                                <div className="muted">Yorumlar yükleniyor…</div>
+                              ) : comments.length ? (
+                                <div className="list" style={{ marginTop: 10 }}>
+                                  {comments.map((c) => (
+                                    <div key={c.id} className="item" style={{ padding: 12 }}>
+                                      <div style={{ fontSize: 14 }}>{c.content}</div>
+                                      <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+                                        {new Date(c.created_at).toLocaleString('tr-TR')}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="muted" style={{ marginTop: 10 }}>
+                                  Henüz yorum yok. İlk yorumu yaz.
+                                </div>
+                              )}
+
+                              <div className="section-gap">
+                                <label className="muted">Yorum yaz</label>
+                                <textarea
+                                  className="textarea"
+                                  value={draft}
+                                  onChange={(e) =>
+                                    setCommentDraftByReview((s) => ({ ...s, [r.id]: e.target.value }))
+                                  }
+                                  placeholder="Kısa ve net yaz…"
+                                />
+                              </div>
+
+                              <div className="section-gap">
+                                <button className="btn" onClick={() => sendComment(r.id)} disabled={isSending}>
+                                  {isSending ? 'Gönderiliyor…' : 'Yorumu Gönder'}
+                                </button>
+                              </div>
+                            </div>
+                          ) : null}
                         </div>
                       )
                     })}
@@ -470,6 +595,75 @@ export default function DashboardPage() {
 
           {/* RIGHT */}
           <div className="col">
+            {/* 1) Deneyim Ekle (üstte) */}
+            <div className="card">
+              <div className="card-inner">
+                <h2 className="card-title">Deneyim Ekle</h2>
+
+                <div className="muted">
+                  {selectedProduct
+                    ? `Seçili ürün: ${selectedProduct.brand} — ${selectedProduct.name}`
+                    : 'Önce soldan bir ürün seç.'}
+                </div>
+
+                <div className="section-gap">
+                  <label className="muted">Puan</label>
+                  <select
+                    className="select"
+                    value={rating}
+                    onChange={(e) => setRating(Number(e.target.value))}
+                    disabled={reviewDisabled}
+                  >
+                    {[5, 4, 3, 2, 1].map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="section-gap">
+                  <label className="muted">Artılar</label>
+                  <textarea
+                    className="textarea"
+                    value={pros}
+                    onChange={(e) => setPros(e.target.value)}
+                    disabled={reviewDisabled}
+                  />
+                </div>
+
+                <div className="section-gap">
+                  <label className="muted">Eksiler</label>
+                  <textarea
+                    className="textarea"
+                    value={cons}
+                    onChange={(e) => setCons(e.target.value)}
+                    disabled={reviewDisabled}
+                  />
+                </div>
+
+                <div className="section-gap row">
+                  <input
+                    id="wba"
+                    type="checkbox"
+                    checked={wouldBuyAgain}
+                    onChange={(e) => setWouldBuyAgain(e.target.checked)}
+                    disabled={reviewDisabled}
+                  />
+                  <label htmlFor="wba" className="muted">
+                    Tekrar alırım
+                  </label>
+                </div>
+
+                <div className="section-gap">
+                  <button className="btn" onClick={saveReview} disabled={saving || reviewDisabled}>
+                    {saving ? 'Kaydediliyor…' : 'Gönder'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* 2) Ürün Ekle (altta) */}
             <div className="card">
               <div className="card-inner">
                 <h2 className="card-title">Ürün Ekle</h2>
@@ -519,53 +713,7 @@ export default function DashboardPage() {
 
             <div className="card">
               <div className="card-inner">
-                <h2 className="card-title">Deneyim Ekle</h2>
-                <div className="muted">Önce soldan bir ürün seç.</div>
-
-                <div className="section-gap">
-                  <label className="muted">Puan</label>
-                  <select className="select" value={rating} onChange={(e) => setRating(Number(e.target.value))}>
-                    {[5, 4, 3, 2, 1].map((n) => (
-                      <option key={n} value={n}>
-                        {n}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="section-gap">
-                  <label className="muted">Artılar</label>
-                  <textarea className="textarea" value={pros} onChange={(e) => setPros(e.target.value)} />
-                </div>
-
-                <div className="section-gap">
-                  <label className="muted">Eksiler</label>
-                  <textarea className="textarea" value={cons} onChange={(e) => setCons(e.target.value)} />
-                </div>
-
-                <div className="section-gap row">
-                  <input
-                    id="wba"
-                    type="checkbox"
-                    checked={wouldBuyAgain}
-                    onChange={(e) => setWouldBuyAgain(e.target.checked)}
-                  />
-                  <label htmlFor="wba" className="muted">
-                    Tekrar alırım
-                  </label>
-                </div>
-
-                <div className="section-gap">
-                  <button className="btn" onClick={saveReview} disabled={saving}>
-                    {saving ? 'Kaydediliyor…' : 'Gönder'}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="card">
-              <div className="card-inner">
-                <div className="muted">Not: Bu sayfada email/kimlik gösterimi tamamen kapalı.</div>
+                <div className="muted">Not: Yorumlar “Son Deneyimler” kartından açılır.</div>
               </div>
             </div>
           </div>
