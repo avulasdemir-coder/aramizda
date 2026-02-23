@@ -215,7 +215,7 @@ export default function DashboardPage() {
           </div>
 
           <div className="pill">
-            <span className="muted">{email}</span>
+            <<span className="muted">Profil</span>
             <button className="btn btn-ghost" onClick={logout}>Çıkış</button>
           </div>
         </div>
