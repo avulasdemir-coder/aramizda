@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 
 const supabase = createClient(
@@ -9,385 +9,197 @@ const supabase = createClient(
 )
 
 type Product = {
-  id: string
-  name: string
-  brand: string
+  id: number
+  title: string
   category: string
 }
 
-type ReviewRow = {
-  id: string
-  rating: number | null
-  pros: string | null
-  cons: string | null
-  would_buy_again: boolean | null
+type Experience = {
+  id: number
+  rating: number
+  pros: string
+  cons: string
+  would_buy_again: boolean
   created_at: string
-  products?: { name: string; brand: string; category: string }[] | null
+  product: { title: string }
 }
 
-function Stars({ value }: { value: number }) {
-  const v = Math.max(0, Math.min(5, Math.round(value)))
-  return (
-    <span className="stars" aria-label={`${v} / 5`}>
-      {Array.from({ length: 5 }).map((_, i) => (
-        <svg
-          key={i}
-          className="star"
-          viewBox="0 0 24 24"
-          fill={i < v ? 'rgba(255, 210, 90, .95)' : 'rgba(255,255,255,.25)'}
-        >
-          <path d="M12 17.3l-5.5 3 1-6.3-4.6-4.5 6.4-1 2.7-5.8 2.7 5.8 6.4 1-4.6 4.5 1 6.3z" />
-        </svg>
-      ))}
-    </span>
-  )
-}
-
-export default function DashboardPage() {
-  const [email, setEmail] = useState<string | null>(null)
-  const [userId, setUserId] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [msg, setMsg] = useState<string>('')
-
-  // product search
-  const [q, setQ] = useState('')
+export default function Dashboard() {
   const [products, setProducts] = useState<Product[]>([])
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
-
-  // latest reviews
-  const [latest, setLatest] = useState<ReviewRow[]>([])
-
-  // add review form
-  const [rating, setRating] = useState<number>(5)
+  const [experiences, setExperiences] = useState<Experience[]>([])
+  const [selectedProduct, setSelectedProduct] = useState<number | null>(null)
+  const [search, setSearch] = useState('')
+  const [rating, setRating] = useState(5)
   const [pros, setPros] = useState('')
   const [cons, setCons] = useState('')
-  const [wouldBuyAgain, setWouldBuyAgain] = useState<boolean>(true)
-  const [saving, setSaving] = useState(false)
+  const [wba, setWba] = useState(false)
 
   useEffect(() => {
-    const init = async () => {
-      const { data } = await supabase.auth.getSession()
-      const u = data.session?.user
-      if (!u) {
-        window.location.href = '/'
-        return
-      }
-      setEmail(u.email ?? null)
-      setUserId(u.id)
-      setLoading(false)
-    }
-
-    init()
-
-    const { data: listener } = supabase.auth.onAuthStateChange((_evt, session) => {
-      const u = session?.user
-      if (!u) {
-        setEmail(null)
-        setUserId(null)
-        window.location.href = '/'
-      } else {
-        setEmail(u.email ?? null)
-        setUserId(u.id)
-      }
-    })
-
-    return () => {
-      listener.subscription.unsubscribe()
-    }
+    loadExperiences()
   }, [])
 
-  const logout = async () => {
-    await supabase.auth.signOut()
-    window.location.href = '/'
+  async function loadExperiences() {
+    const { data } = await supabase
+      .from('experiences')
+      .select('*, product:products(title)')
+      .order('created_at', { ascending: false })
+
+    if (data) setExperiences(data as any)
   }
 
-  const selectedTitle = useMemo(() => {
-    if (!selectedProduct) return 'Seçili ürün: yok'
-    return `Seçili ürün: ${selectedProduct.brand} — ${selectedProduct.name}`
-  }, [selectedProduct])
+  async function searchProducts() {
+    const { data } = await supabase
+      .from('products')
+      .select('*')
+      .ilike('title', `%${search}%`)
 
-  const runSearch = async () => {
-    setMsg('')
-    const term = q.trim()
-    if (!term) {
-      setProducts([])
-      return
-    }
-
-    try {
-      const { data, error } = await supabase
-        .from('products')
-        .select('id,name,brand,category')
-        .or(`name.ilike.%${term}%,brand.ilike.%${term}%`)
-        .limit(20)
-
-      if (error) throw error
-      setProducts((data as Product[]) ?? [])
-    } catch (e: any) {
-      setMsg(e?.message ?? 'Ürün arama başarısız.')
-    }
+    if (data) setProducts(data)
   }
 
-  const loadLatest = async (productId?: string) => {
-    setMsg('')
-    try {
-      let query = supabase
-        .from('reviews')
-        .select(
-          `
-            id,
-            rating,
-            pros,
-            cons,
-            would_buy_again,
-            created_at,
-            products(name,brand,category)
-          `
-        )
-        .order('created_at', { ascending: false })
-        .limit(10)
+  async function addExperience() {
+    if (!selectedProduct) return
 
-      if (productId) query = query.eq('product_id', productId)
+    await supabase.from('experiences').insert({
+      product_id: selectedProduct,
+      rating,
+      pros,
+      cons,
+      would_buy_again: wba
+    })
 
-      const { data, error } = await query
-      if (error) throw error
-
-      setLatest((data as ReviewRow[]) ?? [])
-    } catch (e: any) {
-      setMsg(e?.message ?? 'Son deneyimler yüklenemedi.')
-    }
+    setPros('')
+    setCons('')
+    setRating(5)
+    setWba(false)
+    loadExperiences()
   }
-
-  useEffect(() => {
-    if (!loading) loadLatest()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading])
-
-  useEffect(() => {
-    if (!loading) loadLatest(selectedProduct?.id)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedProduct?.id, loading])
-
-  const saveReview = async () => {
-    setMsg('')
-    if (!userId) return setMsg('Kullanıcı bulunamadı.')
-    if (!selectedProduct) return setMsg('Önce bir ürün seç.')
-
-    setSaving(true)
-    try {
-      const payload = {
-        user_id: userId,
-        product_id: selectedProduct.id,
-        rating,
-        pros: pros.trim() ? pros.trim() : null,
-        cons: cons.trim() ? cons.trim() : null,
-        would_buy_again: wouldBuyAgain,
-      }
-
-      const { error } = await supabase.from('reviews').insert(payload)
-      if (error) throw error
-
-      setPros('')
-      setCons('')
-      setWouldBuyAgain(true)
-      setRating(5)
-
-      await loadLatest(selectedProduct.id)
-      setMsg('Kaydedildi ✅')
-    } catch (e: any) {
-      setMsg(e?.message ?? 'Kaydetme başarısız.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  if (loading) return <div className="page"><div className="container">Yükleniyor…</div></div>
 
   return (
     <div className="page">
-      <div className="container">
-        <div className="topbar">
-          <div className="brand">
-            <div className="pill">
-              <strong>Aramızda</strong>
-              <span className="muted">MVP</span>
-            </div>
-          </div>
-
-          <div className="pill">
-            <<span className="muted">Profil</span>
-            <button className="btn btn-ghost" onClick={logout}>Çıkış</button>
-          </div>
-        </div>
-
-        {msg ? (
-          <div className="card section-gap">
-            <div className="card-inner">
-              <div className="badge">{msg}</div>
-            </div>
-          </div>
-        ) : null}
-
-        <div className="grid section-gap">
-          {/* Left: Search + Latest */}
-          <div className="col">
-            <div className="card">
-              <div className="card-inner">
-                <h2 className="card-title">Ürün Ara</h2>
-
-                <div className="row">
-                  <input
-                    className="input"
-                    value={q}
-                    onChange={(e) => setQ(e.target.value)}
-                    placeholder="örn: cerave"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') runSearch()
-                    }}
-                  />
-                  <button className="btn" onClick={runSearch}>Ara</button>
-                </div>
-
-                <div className="divider" />
-
-                <div className="muted">{selectedTitle}</div>
-
-                {products.length ? (
-                  <div className="list">
-                    {products.map((p) => (
-                      <div key={p.id} className="item">
-                        <div className="row" style={{ justifyContent: 'space-between' }}>
-                          <div>
-                            <div><strong>{p.brand}</strong> — {p.name}</div>
-                            <div className="muted">{p.category}</div>
-                          </div>
-                          <button
-                            className="btn btn-ghost"
-                            onClick={() => setSelectedProduct(p)}
-                          >
-                            Seç
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="muted">Arama yapınca sonuçlar burada listelenir.</div>
-                )}
-              </div>
-            </div>
-
-            <div className="card">
-              <div className="card-inner">
-                <h2 className="card-title">Son Deneyimler</h2>
-                {latest.length ? (
-                  <div className="list">
-                    {latest.map((r) => {
-                      const prod = r.products?.[0]
-                      const title = prod ? `${prod.brand} — ${prod.name}` : 'Ürün'
-                      const score = r.rating ?? 0
-                      return (
-                        <div key={r.id} className="item">
-                          <div className="row" style={{ justifyContent: 'space-between' }}>
-                            <div>
-                              <div><strong>{title}</strong></div>
-                              <div className="muted">
-                                {new Date(r.created_at).toLocaleString('tr-TR')}
-                              </div>
-                            </div>
-                            <Stars value={score} />
-                          </div>
-
-                          {r.pros ? <div className="section-gap">✅ {r.pros}</div> : null}
-                          {r.cons ? <div className="section-gap">⚠️ {r.cons}</div> : null}
-
-                          <div className="section-gap">
-                            <span className="badge">
-                              {r.would_buy_again ? 'Tekrar alırım' : 'Tekrar almam'}
-                            </span>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                ) : (
-                  <div className="muted">Henüz deneyim yok.</div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Right: Add review */}
-          <div className="col">
-            <div className="card">
-              <div className="card-inner">
-                <h2 className="card-title">Deneyim Ekle</h2>
-                <div className="muted">Önce üstten bir ürün seç.</div>
-
-                <div className="section-gap">
-                  <label className="muted">Puan</label>
-                  <select
-                    className="select"
-                    value={rating}
-                    onChange={(e) => setRating(Number(e.target.value))}
-                  >
-                    {[5, 4, 3, 2, 1].map((n) => (
-                      <option key={n} value={n}>{n}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="section-gap">
-                  <label className="muted">Artılar</label>
-                  <textarea
-                    className="textarea"
-                    value={pros}
-                    onChange={(e) => setPros(e.target.value)}
-                    placeholder="Kısa ve net…"
-                  />
-                </div>
-
-                <div className="section-gap">
-                  <label className="muted">Eksiler</label>
-                  <textarea
-                    className="textarea"
-                    value={cons}
-                    onChange={(e) => setCons(e.target.value)}
-                    placeholder="Kısa ve net…"
-                  />
-                </div>
-
-                <div className="section-gap row">
-                  <input
-                    id="wba"
-                    type="checkbox"
-                    checked={wouldBuyAgain}
-                    onChange={(e) => setWouldBuyAgain(e.target.checked)}
-                  />
-                  <label htmlFor="wba" className="muted">Tekrar alırım</label>
-                </div>
-
-                <div className="section-gap">
-                  <button className="btn" onClick={saveReview} disabled={saving}>
-                    {saving ? 'Kaydediliyor…' : 'Gönder'}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="card">
-              <div className="card-inner">
-                <h2 className="card-title">Not</h2>
-                <div className="muted">
-                  Tasarım sonradan kolayca değişir. Şu an önemli olan: ürün arama, deneyim yazma,
-                  listeleme ve çıkış akışı düzgün çalışsın.
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
+      <div className="card header">
+        <h2>Profil</h2>
       </div>
+
+      <div className="grid">
+        <div className="card">
+          <h3>Ürün Ara</h3>
+          <input
+            placeholder="örn: elidor şampuan"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+          <button onClick={searchProducts}>Ara</button>
+
+          {products.map(p => (
+            <div
+              key={p.id}
+              className={`product ${selectedProduct === p.id ? 'selected' : ''}`}
+              onClick={() => setSelectedProduct(p.id)}
+            >
+              {p.title}
+              <div className="muted">{p.category}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="card">
+          <h3>Deneyim Ekle</h3>
+          {!selectedProduct && (
+            <div className="muted">Önce soldan bir ürün seç.</div>
+          )}
+
+          <label>Puan</label>
+          <select value={rating} onChange={e => setRating(Number(e.target.value))}>
+            {[1,2,3,4,5].map(n => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+
+          <label>Artılar</label>
+          <textarea value={pros} onChange={e => setPros(e.target.value)} />
+
+          <label>Eksiler</label>
+          <textarea value={cons} onChange={e => setCons(e.target.value)} />
+
+          <label>
+            <input
+              type="checkbox"
+              checked={wba}
+              onChange={e => setWba(e.target.checked)}
+            />
+            Tekrar alırım
+          </label>
+
+          <button onClick={addExperience}>Gönder</button>
+        </div>
+      </div>
+
+      <div className="card">
+        <h3>Son Deneyimler</h3>
+        {experiences.length === 0 && (
+          <div className="muted">Henüz deneyim yok.</div>
+        )}
+
+        {experiences.map(exp => (
+          <div key={exp.id} className="review">
+            <strong>{exp.product?.title}</strong>
+            <div>⭐ {exp.rating}</div>
+            <div><b>Artılar:</b> {exp.pros}</div>
+            <div><b>Eksiler:</b> {exp.cons}</div>
+            {exp.would_buy_again && <div className="muted">Tekrar alırım</div>}
+          </div>
+        ))}
+      </div>
+
+      <style jsx>{`
+        .page {
+          min-height: 100vh;
+          background: linear-gradient(135deg,#c471f5,#fa71cd);
+          padding: 40px;
+        }
+        .grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 24px;
+          margin-bottom: 24px;
+        }
+        .card {
+          background: rgba(255,255,255,0.15);
+          backdrop-filter: blur(20px);
+          padding: 20px;
+          border-radius: 20px;
+          color: white;
+        }
+        input, textarea, select {
+          width: 100%;
+          margin-bottom: 12px;
+          padding: 8px;
+          border-radius: 8px;
+          border: none;
+        }
+        button {
+          padding: 8px 16px;
+          border-radius: 8px;
+          border: none;
+          cursor: pointer;
+        }
+        .product {
+          padding: 8px;
+          margin-bottom: 8px;
+          cursor: pointer;
+          border-radius: 8px;
+        }
+        .product.selected {
+          background: rgba(255,255,255,0.25);
+        }
+        .muted {
+          opacity: 0.7;
+          font-size: 14px;
+        }
+        .review {
+          margin-bottom: 16px;
+        }
+      `}</style>
     </div>
   )
 }
