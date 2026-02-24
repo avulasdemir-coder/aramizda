@@ -99,6 +99,8 @@ async function uploadImage(file: File, folder: string) {
 }
 
 export default function Home() {
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
+const [lightboxAlt, setLightboxAlt] = useState<string>('Fotoğraf')
   // auth
   const [userId, setUserId] = useState<string | null>(null)
 
@@ -453,7 +455,20 @@ export default function Home() {
                 ) : (
                   products.map((p) => (
                     <button key={p.id} className={`item ${selected?.id === p.id ? 'active' : ''}`} onClick={() => setSelected(p)}>
-                      {p.image_url ? <img className="thumb" src={p.image_url} alt="" /> : <div className="thumb ph" />}
+                      {p.image_url ? (
+  <img
+    className="thumb clickable"
+    src={p.image_url}
+    alt=""
+    onClick={(e) => {
+      e.stopPropagation()
+      setLightboxAlt(`${p.brand} — ${p.name}`)
+      setLightboxUrl(p.image_url!)
+    }}
+  />
+) : (
+  <div className="thumb ph" />
+)}
                       <div className="mid">
                         <div className="t">{p.brand} — {p.name}</div>
                         <div className="muted small">{p.category || 'Kategori yok'}</div>
@@ -560,7 +575,17 @@ export default function Home() {
                       <div className="muted small">{r.product ? `${r.product.brand} — ${r.product.name}` : 'Ürün'}</div>
                       {r.pros ? <div className="pill okP">+ {r.pros}</div> : null}
                       {r.cons ? <div className="pill badP">- {r.cons}</div> : null}
-                      {r.image_url ? <img className="rImg" src={r.image_url} alt="" /> : null}
+                      {r.image_url ? (
+  <img
+    className="rImg clickable"
+    src={r.image_url}
+    alt=""
+    onClick={() => {
+      setLightboxAlt('Deneyim fotoğrafı')
+      setLightboxUrl(r.image_url!)
+    }}
+  />
+) : null}
                     </div>
                   ))}
                 </div>
@@ -570,6 +595,28 @@ export default function Home() {
         )}
 
         <div className="foot muted small">© ARAMIZDA</div>
+        {lightboxUrl ? (
+  <div
+    className="lb"
+    onClick={() => setLightboxUrl(null)}
+    role="dialog"
+    aria-modal="true"
+  >
+    <div className="lbInner" onClick={(e) => e.stopPropagation()}>
+      <button
+        className="lbClose"
+        onClick={() => setLightboxUrl(null)}
+        aria-label="Kapat"
+      >
+        ×
+      </button>
+
+      <img className="lbImg" src={lightboxUrl} alt={lightboxAlt} />
+
+      <div className="lbCap">{lightboxAlt}</div>
+    </div>
+  </div>
+) : null}
       </div>
     </div>
   )
@@ -724,5 +771,60 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   .grid{ grid-template-columns: 1fr; }
   .tall{ min-height: auto; }
   .list,.recent{ max-height: 280px; }
+}
+  .clickable { cursor: zoom-in; }
+
+.lb{
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0,0,0,.65);
+  backdrop-filter: blur(10px);
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+
+.lbInner{
+  width: min(920px, 96vw);
+  max-height: 90vh;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,.18);
+  background: rgba(15, 5, 20, .55);
+  box-shadow: 0 30px 90px rgba(0,0,0,.55);
+  padding: 14px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lbClose{
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.22);
+  background: rgba(0,0,0,.35);
+  color: #fff;
+  font-size: 22px;
+  cursor: pointer;
+}
+
+.lbImg{
+  width: 100%;
+  height: auto;
+  max-height: 72vh;
+  object-fit: contain;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.14);
+}
+
+.lbCap{
+  font-size: 12px;
+  color: rgba(255,255,255,.75);
+  text-align: center;
 }
 `
