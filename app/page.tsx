@@ -662,21 +662,21 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   gap: 32px;
 }
 .logo{
-  width: 120px;
-  height: 120px;
+  width: 140px;
+  height: 140px;
   object-fit: contain;
 
-  padding: 8px; /* azaltıldı */
-  border-radius: 32px;
+  padding: 4px; /* iyice yaklaştırdık */
+  border-radius: 36px;
 
-  background: rgba(20, 10, 35, 0.85);
-  border: 2px solid rgba(255,255,255,.7);
+  background: rgba(20, 10, 35, 0.90);
+  border: 2px solid rgba(255,255,255,.75);
 
   box-shadow:
-    0 35px 80px rgba(0,0,0,.6),
-    0 0 40px rgba(255,255,255,.25);
+    0 40px 90px rgba(0,0,0,.65),
+    0 0 50px rgba(255,255,255,.35);
 
-  filter: contrast(1.4) brightness(1.2);
+  filter: contrast(1.5) brightness(1.25);
 }
 .word{
   font-weight: 800;
