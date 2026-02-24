@@ -696,7 +696,16 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   position: sticky; top: 12px; z-index: 20;
 }
 .brand{ display:flex; align-items:center; gap: 12px; }
-.logo{ width: 34px; height: 34px; object-fit: contain; filter: drop-shadow(0 10px 20px rgba(0,0,0,.25)); }
+..logo{
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  padding: 6px;
+  border-radius: 14px;
+  background: rgba(255,255,255,.18);
+  border: 1px solid rgba(255,255,255,.22);
+  box-shadow: 0 10px 30px rgba(0,0,0,.25);
+}
 .word{ font-weight: 500; letter-spacing: .18em; text-transform: uppercase; }
 .right{ display:flex; align-items:center; gap: 10px; }
 .userPill{
