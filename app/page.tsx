@@ -666,7 +666,7 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   height: 120px;
   object-fit: contain;
 
-  padding: 24px;
+  padding: 8px; /* azaltıldı */
   border-radius: 32px;
 
   background: rgba(20, 10, 35, 0.85);
