@@ -3,7 +3,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 
-const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 type Profile = {
   user_id: string
@@ -46,13 +49,9 @@ function uid() {
 
 function validateImage(file: File) {
   const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']
-  const maxSize = 5 * 1024 * 1024
-  if (!allowed.includes(file.type)) {
-    throw new Error('Sadece JPG, PNG, WEBP veya HEIC/HEIF yükleyebilirsin')
-  }
-  if (file.size > maxSize) {
-    throw new Error('Fotoğraf en fazla 5MB olabilir')
-  }
+  const maxSize = 5 * 1024 * 1024 // 5MB
+  if (!allowed.includes(file.type)) throw new Error('Sadece JPG, PNG, WEBP veya HEIC/HEIF yükleyebilirsin')
+  if (file.size > maxSize) throw new Error('Fotoğraf en fazla 5MB olabilir')
 }
 
 async function uploadImage(file: File, folder: string) {
@@ -94,7 +93,8 @@ export default function Home() {
   // add product
   const [newBrand, setNewBrand] = useState('')
   const [newName, setNewName] = useState('')
-  const [categoryChoice, setCategoryChoice] = useState<(typeof CATEGORY_OPTIONS)[number]>('Cilt Bakım')
+  const [categoryChoice, setCategoryChoice] =
+    useState<(typeof CATEGORY_OPTIONS)[number]>('Cilt Bakım')
   const [customCategory, setCustomCategory] = useState('')
   const [newPhoto, setNewPhoto] = useState<File | null>(null)
   const [addingProduct, setAddingProduct] = useState(false)
@@ -109,9 +109,13 @@ export default function Home() {
   const [addingExp, setAddingExp] = useState(false)
   const [expMsg, setExpMsg] = useState<string | null>(null)
 
-  // recent
+  // recent (global)
   const [recent, setRecent] = useState<ExperienceRow[]>([])
   const [recentLoading, setRecentLoading] = useState(false)
+
+  // selected product reviews
+  const [productReviews, setProductReviews] = useState<ExperienceRow[]>([])
+  const [productReviewsLoading, setProductReviewsLoading] = useState(false)
 
   // lightbox
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
@@ -144,6 +148,7 @@ export default function Home() {
       setSelected(null)
       setProducts([])
       setRecent([])
+      setProductReviews([])
       if (uid) {
         loadProfile(uid)
         loadRecent()
@@ -156,9 +161,25 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // seçili ürün değişince: o ürünün yorumlarını çek
+  useEffect(() => {
+    if (!userId) return
+    if (!selected?.id) {
+      setProductReviews([])
+      return
+    }
+    loadProductReviews(selected.id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id, userId])
+
   async function loadProfile(uid: string) {
     setProfileErr(null)
-    const res = await supabase.from('profiles').select('user_id,username,avatar_url,is_admin').eq('user_id', uid).maybeSingle()
+    const res = await supabase
+      .from('profiles')
+      .select('user_id,username,avatar_url,is_admin')
+      .eq('user_id', uid)
+      .maybeSingle()
+
     if (res.error) {
       setProfile(null)
       setProfileErr(res.error.message)
@@ -239,13 +260,36 @@ export default function Home() {
     setAddProductMsg(null)
     try {
       if (!userId) throw new Error('Giriş gerekli')
+
       const brand = newBrand.trim()
       const name = newName.trim()
       if (!brand || !name) throw new Error('Marka ve ürün adı zorunlu')
 
-      const category = categoryChoice === 'Diğer' ? (customCategory.trim() || null) : (categoryChoice as string)
+      const category =
+        categoryChoice === 'Diğer' ? (customCategory.trim() || null) : (categoryChoice as string)
 
       setAddingProduct(true)
+
+      // Aynı isimli ürünü tekrar eklemeyi engelle (tam/benzer: case-insensitive)
+      const dupName = await supabase
+        .from('products')
+        .select('id')
+        .ilike('name', name)
+        .limit(1)
+
+      if (dupName.error) throw dupName.error
+      if (dupName.data && dupName.data.length > 0) throw new Error('Bu ürün zaten ekli')
+
+      // Aynı brand + name kombinasyonu da engellensin (ekstra güvenlik)
+      const dupCombo = await supabase
+        .from('products')
+        .select('id')
+        .ilike('brand', brand)
+        .ilike('name', name)
+        .limit(1)
+
+      if (dupCombo.error) throw dupCombo.error
+      if (dupCombo.data && dupCombo.data.length > 0) throw new Error('Bu ürün zaten ekli')
 
       let image_url: string | null = null
       if (newPhoto) image_url = await uploadImage(newPhoto, 'products')
@@ -269,11 +313,7 @@ export default function Home() {
       if (q.trim()) await searchProducts()
     } catch (e: any) {
       const msg = (e?.message ?? 'Ürün eklenemedi') as string
-      if (msg.toLowerCase().includes('duplicate')) {
-        setPErr('Bu ürün zaten ekli')
-      } else {
-        setPErr(msg)
-      }
+      setPErr(msg.toLowerCase().includes('duplicate') ? 'Bu ürün zaten ekli' : msg)
     } finally {
       setAddingProduct(false)
     }
@@ -313,7 +353,9 @@ export default function Home() {
       setWba(false)
       setExpPhoto(null)
       setExpMsg('Deneyim eklendi')
+
       await loadRecent()
+      await loadProductReviews(selected.id)
     } catch (e: any) {
       setExpMsg(e?.message ?? 'Deneyim eklenemedi')
     } finally {
@@ -345,6 +387,32 @@ export default function Home() {
     }
   }
 
+  async function loadProductReviews(productId: string) {
+    setProductReviewsLoading(true)
+    try {
+      const { data, error } = await supabase
+        .from('experiences')
+        .select(
+          `
+          id,user_id,product_id,rating,pros,cons,would_buy_again,image_url,created_at,
+          product:products!experiences_product_id_fkey(id,brand,name,category,image_url,created_at),
+          author:profiles!experiences_user_id_fkey(username,avatar_url)
+        `
+        )
+        .eq('product_id', productId)
+        .order('created_at', { ascending: false })
+        .limit(50)
+
+      if (error) throw error
+      setProductReviews(((data as any[]) || []) as ExperienceRow[])
+    } catch {
+      setProductReviews([])
+    } finally {
+      setProductReviewsLoading(false)
+    }
+  }
+
+  // UI
   if (!userId) {
     return (
       <div className="wrap">
@@ -353,7 +421,6 @@ export default function Home() {
           <div className="card authCard">
             <div className="h1">Giriş</div>
             <div className="muted">Devam etmek için Google ile giriş yap</div>
-
             <button className="btn btnSm" onClick={signInWithGoogle}>
               Google ile giriş
             </button>
@@ -362,6 +429,8 @@ export default function Home() {
       </div>
     )
   }
+
+  const showSelectedReviews = !!selected
 
   return (
     <div className="wrap">
@@ -410,7 +479,12 @@ export default function Home() {
 
             <div className="field">
               <div className="label">Kullanıcı adı</div>
-              <input className="input" value={usernameDraft} onChange={(e) => setUsernameDraft(e.target.value)} placeholder="ör: ulas, gizem" />
+              <input
+                className="input"
+                value={usernameDraft}
+                onChange={(e) => setUsernameDraft(e.target.value)}
+                placeholder="ör: ulas, gizem"
+              />
             </div>
 
             <div className="field">
@@ -443,7 +517,12 @@ export default function Home() {
                 }}
               >
                 <div className="row">
-                  <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="ör: bee beauty" />
+                  <input
+                    className="input"
+                    value={q}
+                    onChange={(e) => setQ(e.target.value)}
+                    placeholder="ör: bee beauty"
+                  />
                   <button className="btn btnSm" type="submit" disabled={pLoading}>
                     {pLoading ? '…' : 'Ara'}
                   </button>
@@ -513,7 +592,11 @@ export default function Home() {
 
               <div className="field">
                 <div className="label">Puan</div>
-                <select className="input" value={rating} onChange={(e) => setRating(parseInt(e.target.value, 10))}>
+                <select
+                  className="input"
+                  value={rating}
+                  onChange={(e) => setRating(parseInt(e.target.value, 10))}
+                >
                   {[1, 2, 3, 4, 5].map((n) => (
                     <option key={n} value={n}>
                       {n}
@@ -583,7 +666,12 @@ export default function Home() {
               {categoryChoice === 'Diğer' ? (
                 <div className="field">
                   <div className="label">Diğer kategori</div>
-                  <input className="input" value={customCategory} onChange={(e) => setCustomCategory(e.target.value)} placeholder="ör: Anne&Bebek" />
+                  <input
+                    className="input"
+                    value={customCategory}
+                    onChange={(e) => setCustomCategory(e.target.value)}
+                    placeholder="ör: Anne&Bebek"
+                  />
                 </div>
               ) : null}
 
@@ -604,8 +692,49 @@ export default function Home() {
 
               <div className="divider" />
 
-              <div className="h2">Son Deneyimler</div>
-              {recentLoading ? (
+              <div className="h2">{showSelectedReviews ? 'Bu ürünün yorumları' : 'Son Deneyimler'}</div>
+
+              {showSelectedReviews ? (
+                productReviewsLoading ? (
+                  <div className="muted">Yükleniyor…</div>
+                ) : productReviews.length === 0 ? (
+                  <div className="muted">Bu ürüne henüz yorum yok</div>
+                ) : (
+                  <div className="recent">
+                    {productReviews.map((r) => (
+                      <div className="r" key={r.id}>
+                        <div className="rHead">
+                          {r.author?.avatar_url ? (
+                            <img className="avSm" src={r.author.avatar_url} alt="" />
+                          ) : (
+                            <div className="avSm ph" />
+                          )}
+                          <div className="rMeta">
+                            <div className="rUser">{r.author?.username || 'Kullanıcı'}</div>
+                            <div className="muted small">{new Date(r.created_at).toLocaleString('tr-TR')}</div>
+                          </div>
+                          <div className="badge">{typeof r.rating === 'number' ? `${r.rating}/5` : '-'}</div>
+                        </div>
+
+                        {r.pros ? <div className="pill okP">+ {r.pros}</div> : null}
+                        {r.cons ? <div className="pill badP">- {r.cons}</div> : null}
+
+                        {r.image_url ? (
+                          <img
+                            className="rImg clickable"
+                            src={r.image_url}
+                            alt=""
+                            onClick={() => {
+                              setLightboxAlt('Deneyim fotoğrafı')
+                              setLightboxUrl(r.image_url!)
+                            }}
+                          />
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                )
+              ) : recentLoading ? (
                 <div className="muted">Yükleniyor…</div>
               ) : recent.length === 0 ? (
                 <div className="muted">Henüz yok</div>
@@ -684,7 +813,7 @@ export default function Home() {
                       await saveProfile()
                       setProfileOpen(false)
                     } catch {
-                      // hata zaten ekranda
+                      // mesaj zaten ekranda
                     }
                   }}
                   disabled={savingProfile}
@@ -764,7 +893,6 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
     0 35px 80px rgba(0,0,0,.55),
     inset 0 0 0 1px rgba(255,255,255,.06);
 }
-
 .word{ font-weight: 900; font-size: 26px; letter-spacing: .22em; text-transform: uppercase; }
 
 .right{ display:flex; align-items:center; gap: 16px; }
