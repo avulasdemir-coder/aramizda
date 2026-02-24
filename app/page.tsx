@@ -436,13 +436,30 @@ export default function Home() {
           <main className="grid">
             {/* Left */}
             <section className="card tall">
-              <div className="h2">Ürün Ara</div>
-              <div className="row">
-                <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="ör: bee beauty" />
-                <button className="btn" onClick={searchProducts} disabled={pLoading}>
-                  {pLoading ? '…' : 'Ara'}
-                </button>
-              </div>
+  <div className="h2">Ürün Ara</div>
+
+  <form
+    onSubmit={(e) => {
+      e.preventDefault()
+      searchProducts()
+    }}
+  >
+    <div className="row">
+      <input
+        className="input"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="ör: bee beauty"
+      />
+      <button
+        className="btn"
+        type="submit"
+        disabled={pLoading}
+      >
+        {pLoading ? '…' : 'Ara'}
+      </button>
+    </div>
+  </form>
 
               {pErr ? <div className="err">{pErr}</div> : null}
               {addProductMsg ? <div className="ok">{addProductMsg}</div> : null}
