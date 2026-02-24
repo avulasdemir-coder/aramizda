@@ -336,23 +336,27 @@ export default function Home() {
     }
   }
 
-  if (!userId) {
-    return (
-      <div className="wrap">
-        <style>{css}</style>
-        <div className="center">
-          <div className="card authCard">
-            <div className="h1">Giriş</div>
-            <div className="muted">Devam etmek için Google ile giriş yap</div>
-            <button className="btn" onClick={signInWithGoogle}>
-              Google ile giriş
-            </button>
-          </div>
+if (!userId) {
+  return (
+    <div className="wrap">
+      <style>{css}</style>
+      <div className="center">
+        <div className="card authCard">
+          <div className="h1">Giriş</div>
+          <div className="muted">Devam etmek için Google ile giriş yap</div>
+
+          <button
+            className="btn btnSm"
+            onClick={signInWithGoogle}
+          >
+            Google ile giriş
+          </button>
+
         </div>
       </div>
-    )
-  }
-
+    </div>
+  )
+}
   return (
     <div className="wrap">
       <style>{css}</style>
@@ -443,8 +447,40 @@ export default function Home() {
               {addProductMsg ? <div className="ok">{addProductMsg}</div> : null}
 
               <div className="list">
-                {products.length === 0 ? (
-                  <div className="muted small">Arama yapınca sonuçlar burada listelenir</div>
+  {products.length === 0 ? (
+    <div className="muted small">
+      {q.trim()
+        ? 'Ürün henüz eklenmemiş, eklemek ister misiniz'
+        : 'Ürün arayın, sonuçlar burada görünecek'}
+      {q.trim() ? (
+        <div style={{ marginTop: 10 }}>
+          <button
+            className="btn btnSm"
+            type="button"
+            onClick={() => {
+              // İstersen burada sağdaki Ürün Ekle alanını otomatik doldurabiliriz
+              // Şimdilik sadece kullanıcıya yönlendirme yapıyoruz
+              const el = document.getElementById('add-product')
+              el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            }}
+          >
+            Ürün ekle
+          </button>
+        </div>
+      ) : null}
+    </div>
+  ) : (
+    products.map((p) => (
+      <button
+        key={p.id}
+        className={`item ${selected?.id === p.id ? 'active' : ''}`}
+        onClick={() => setSelected(p)}
+      >
+        {/* mevcut içerik aynı */}
+      </button>
+    ))
+  )}
+</div>
                 ) : (
                   products.map((p) => (
                     <button key={p.id} className={`item ${selected?.id === p.id ? 'active' : ''}`} onClick={() => setSelected(p)}>
@@ -475,7 +511,7 @@ export default function Home() {
             </section>
 
             {/* Middle */}
-            <section className="card tall">
+            <<section id="add-product" className="card tall">
               <div className="h2">Deneyim Ekle</div>
               <div className="muted small">{selectedLabel}</div>
 
