@@ -586,11 +586,15 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
 .av.ph{ background: rgba(255,255,255,.14); }
 .uname{ font-weight: 800; font-size: 13px; }
 .btn{
-  appearance:none; border:0; cursor:pointer;
-  padding: 10px 14px; border-radius: 14px;
-  background: rgba(255,255,255,.90);
-  color: rgba(30, 10, 40, 0.95);
+  appearance:none;
+  border:1px solid rgba(255,255,255,.35);
+  cursor:pointer;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #ffffff, #f2e8ff);
+  color: #3b0066;
   font-weight: 900;
+  box-shadow: 0 8px 24px rgba(0,0,0,.25);
 }
 .btn.ghost{
   background: rgba(255,255,255,.08);
