@@ -666,20 +666,17 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   height: 120px;
   object-fit: contain;
 
-  padding: 22px;
-  border-radius: 30px;
+  padding: 24px;
+  border-radius: 32px;
 
-  background: radial-gradient(circle at center, rgba(255,255,255,.85), rgba(255,255,255,.45));
+  background: rgba(20, 10, 35, 0.85);
   border: 2px solid rgba(255,255,255,.7);
 
   box-shadow:
-    0 30px 70px rgba(0,0,0,.55),
-    inset 0 3px 10px rgba(255,255,255,.6);
+    0 35px 80px rgba(0,0,0,.6),
+    0 0 40px rgba(255,255,255,.25);
 
-  filter:
-    contrast(1.35)
-    brightness(1.15)
-    drop-shadow(0 0 18px rgba(255,255,255,.6));
+  filter: contrast(1.4) brightness(1.2);
 }
 .word{
   font-weight: 800;
