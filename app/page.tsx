@@ -46,9 +46,13 @@ function uid() {
 
 function validateImage(file: File) {
   const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']
-  const maxSize = 5 * 1024 * 1024 // 5MB
-  if (!allowed.includes(file.type)) throw new Error('Sadece JPG, PNG, WEBP veya HEIC/HEIF formatı yükleyebilirsin.')
-  if (file.size > maxSize) throw new Error('Fotoğraf en fazla 5MB olabilir.')
+  const maxSize = 5 * 1024 * 1024
+  if (!allowed.includes(file.type)) {
+    throw new Error('Sadece JPG, PNG, WEBP veya HEIC/HEIF yükleyebilirsin')
+  }
+  if (file.size > maxSize) {
+    throw new Error('Fotoğraf en fazla 5MB olabilir')
+  }
 }
 
 async function uploadImage(file: File, folder: string) {
@@ -87,7 +91,7 @@ export default function Home() {
   const [pLoading, setPLoading] = useState(false)
   const [pErr, setPErr] = useState<string | null>(null)
 
-  // add product (admin)
+  // add product
   const [newBrand, setNewBrand] = useState('')
   const [newName, setNewName] = useState('')
   const [categoryChoice, setCategoryChoice] = useState<(typeof CATEGORY_OPTIONS)[number]>('Cilt Bakım')
@@ -100,7 +104,7 @@ export default function Home() {
   const [rating, setRating] = useState(5)
   const [pros, setPros] = useState('')
   const [cons, setCons] = useState('')
-  const [wba, setWba] = useState(true)
+  const [wba, setWba] = useState(false) // default boş
   const [expPhoto, setExpPhoto] = useState<File | null>(null)
   const [addingExp, setAddingExp] = useState(false)
   const [expMsg, setExpMsg] = useState<string | null>(null)
@@ -116,7 +120,7 @@ export default function Home() {
   const needsUsername = !!userId && (!profile?.username || profile.username.trim().length < 2)
 
   const selectedLabel = useMemo(() => {
-    if (!selected) return 'Seçili ürün yok'
+    if (!selected) return 'Seçili ürün yok (Önce soldan ürün seç)'
     const cat = selected.category ? ` • ${selected.category}` : ''
     return `${selected.brand} — ${selected.name}${cat}`
   }, [selected])
@@ -152,7 +156,6 @@ export default function Home() {
   async function loadProfile(uid: string) {
     setProfileErr(null)
     const res = await supabase.from('profiles').select('user_id,username,avatar_url,is_admin').eq('user_id', uid).maybeSingle()
-
     if (res.error) {
       setProfile(null)
       setProfileErr(res.error.message)
@@ -166,10 +169,9 @@ export default function Home() {
     if (!userId) return
     setSavingProfile(true)
     setProfileErr(null)
-
     try {
       const uname = usernameDraft.trim()
-      if (uname.length < 2) throw new Error('Kullanıcı adı en az 2 karakter olmalı.')
+      if (uname.length < 2) throw new Error('Kullanıcı adı en az 2 karakter olmalı')
 
       let avatar_url = profile?.avatar_url ?? null
       if (avatarDraft) avatar_url = await uploadImage(avatarDraft, 'avatars')
@@ -184,7 +186,7 @@ export default function Home() {
       setProfile(up.data as Profile)
       setAvatarDraft(null)
     } catch (e: any) {
-      setProfileErr(e?.message ?? 'Profil kaydedilemedi.')
+      setProfileErr(e?.message ?? 'Profil kaydedilemedi')
     } finally {
       setSavingProfile(false)
     }
@@ -222,7 +224,7 @@ export default function Home() {
       if (error) throw error
       setProducts((data as Product[]) ?? [])
     } catch (e: any) {
-      setPErr(e?.message ?? 'Ürün araması başarısız.')
+      setPErr(e?.message ?? 'Ürün araması başarısız')
     } finally {
       setPLoading(false)
     }
@@ -232,12 +234,10 @@ export default function Home() {
     setPErr(null)
     setAddProductMsg(null)
     try {
-      if (!userId) throw new Error('Giriş gerekli.')
-      if (!profile?.is_admin) throw new Error('Ürün ekleme yetkin yok.')
-
+      if (!userId) throw new Error('Giriş gerekli')
       const brand = newBrand.trim()
       const name = newName.trim()
-      if (!brand || !name) throw new Error('Marka ve ürün adı zorunlu.')
+      if (!brand || !name) throw new Error('Marka ve ürün adı zorunlu')
 
       const category = categoryChoice === 'Diğer' ? (customCategory.trim() || null) : (categoryChoice as string)
 
@@ -246,10 +246,15 @@ export default function Home() {
       let image_url: string | null = null
       if (newPhoto) image_url = await uploadImage(newPhoto, 'products')
 
-      const ins = await supabase.from('products').insert({ brand, name, category, image_url }).select('id,brand,name,category,image_url,created_at').single()
+      const ins = await supabase
+        .from('products')
+        .insert({ brand, name, category, image_url })
+        .select('id,brand,name,category,image_url,created_at')
+        .single()
+
       if (ins.error) throw ins.error
 
-      setAddProductMsg('Ürün eklendi.')
+      setAddProductMsg('Ürün eklendi')
       setNewBrand('')
       setNewName('')
       setCategoryChoice('Cilt Bakım')
@@ -259,7 +264,7 @@ export default function Home() {
       setSelected(ins.data as Product)
       if (q.trim()) await searchProducts()
     } catch (e: any) {
-      setPErr(e?.message ?? 'Ürün eklenemedi.')
+      setPErr(e?.message ?? 'Ürün eklenemedi')
     } finally {
       setAddingProduct(false)
     }
@@ -268,9 +273,9 @@ export default function Home() {
   async function addExperience() {
     setExpMsg(null)
     try {
-      if (!userId) throw new Error('Giriş gerekli.')
-      if (!profile?.username) throw new Error('Önce kullanıcı adı belirle.')
-      if (!selected) throw new Error('Önce ürün seç.')
+      if (!userId) throw new Error('Giriş gerekli')
+      if (!profile?.username) throw new Error('Önce kullanıcı adı belirle')
+      if (!selected) throw new Error('Önce ürün seç')
 
       setAddingExp(true)
 
@@ -296,12 +301,12 @@ export default function Home() {
       setPros('')
       setCons('')
       setRating(5)
-      setWba(true)
+      setWba(false)
       setExpPhoto(null)
-      setExpMsg('Deneyim eklendi.')
+      setExpMsg('Deneyim eklendi')
       await loadRecent()
     } catch (e: any) {
-      setExpMsg(e?.message ?? 'Deneyim eklenemedi.')
+      setExpMsg(e?.message ?? 'Deneyim eklenemedi')
     } finally {
       setAddingExp(false)
     }
@@ -324,6 +329,8 @@ export default function Home() {
 
       if (error) throw error
       setRecent(((data as any[]) || []) as ExperienceRow[])
+    } catch {
+      // sessiz
     } finally {
       setRecentLoading(false)
     }
@@ -334,9 +341,9 @@ export default function Home() {
       <div className="wrap">
         <style>{css}</style>
         <div className="center">
-          <div className="card">
-            <div className="h1">Giriş yap</div>
-            <div className="muted">Devam etmek için Google ile giriş yap.</div>
+          <div className="card authCard">
+            <div className="h1">Giriş</div>
+            <div className="muted">Devam etmek için Google ile giriş yap</div>
             <button className="btn" onClick={signInWithGoogle}>
               Google ile giriş
             </button>
@@ -369,7 +376,7 @@ export default function Home() {
               {profile?.avatar_url ? <img className="av" src={profile.avatar_url} alt="" /> : <div className="av ph" />}
               <div className="uname">{profile?.username || 'Profil'}</div>
             </div>
-            <button className="btn ghost" onClick={signOut}>
+            <button className="btn ghost btnSm" onClick={signOut}>
               Çıkış
             </button>
           </div>
@@ -378,7 +385,7 @@ export default function Home() {
         {needsUsername ? (
           <div className="card">
             <div className="h2">Kullanıcı adı</div>
-            <div className="muted">Yorumlar anonim olmayacak. Bu isim görünecek.</div>
+            <div className="muted">Bu isim yorumlarda görünecek</div>
 
             <div className="field">
               <div className="label">Kullanıcı adı</div>
@@ -393,7 +400,7 @@ export default function Home() {
                 accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
                 onChange={(e) => setAvatarDraft(e.target.files?.[0] ?? null)}
               />
-              <div className="muted small">5MB altı.</div>
+              <div className="muted small">5MB altı</div>
             </div>
 
             {profileErr ? <div className="err">{profileErr}</div> : null}
@@ -416,7 +423,7 @@ export default function Home() {
               >
                 <div className="row">
                   <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="ör: bee beauty" />
-                  <button className="btn" type="submit" disabled={pLoading}>
+                  <button className="btn btnSm" type="submit" disabled={pLoading}>
                     {pLoading ? '…' : 'Ara'}
                   </button>
                 </div>
@@ -427,7 +434,7 @@ export default function Home() {
 
               <div className="list">
                 {products.length === 0 ? (
-                  <div className="muted small">Arama yapınca sonuçlar burada listelenir.</div>
+                  <div className="muted small">Arama yapınca sonuçlar burada listelenir</div>
                 ) : (
                   products.map((p) => (
                     <button key={p.id} className={`item ${selected?.id === p.id ? 'active' : ''}`} onClick={() => setSelected(p)}>
@@ -496,71 +503,62 @@ export default function Home() {
                   accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
                   onChange={(e) => setExpPhoto(e.target.files?.[0] ?? null)}
                 />
-                <div className="muted small">5MB altı.</div>
+                <div className="muted small">5MB altı</div>
               </div>
 
               {expMsg ? <div className={expMsg.includes('eklendi') ? 'ok' : 'err'}>{expMsg}</div> : null}
 
-              <button className="btn" disabled={!selected || addingExp} onClick={addExperience}>
+              <button className="btn btnSm" disabled={!selected || addingExp} onClick={addExperience}>
                 {addingExp ? 'Gönderiliyor…' : 'Gönder'}
               </button>
-
-              {!selected ? <div className="muted small" style={{ marginTop: 10 }}>Önce soldan ürün seç.</div> : null}
             </section>
 
             {/* Right */}
             <section className="card tall">
               <div className="h2">Ürün Ekle</div>
-              <div className="muted small">İlk hafta sadece admin/partner.</div>
 
-              {!profile?.is_admin ? (
-                <div className="muted" style={{ marginTop: 10 }}>Ürün ekleme yetkin yok.</div>
-              ) : (
-                <>
-                  <div className="field">
-                    <div className="label">Marka</div>
-                    <input className="input" value={newBrand} onChange={(e) => setNewBrand(e.target.value)} />
-                  </div>
+              <div className="field">
+                <div className="label">Marka</div>
+                <input className="input" value={newBrand} onChange={(e) => setNewBrand(e.target.value)} />
+              </div>
 
-                  <div className="field">
-                    <div className="label">Ürün adı</div>
-                    <input className="input" value={newName} onChange={(e) => setNewName(e.target.value)} />
-                  </div>
+              <div className="field">
+                <div className="label">Ürün adı</div>
+                <input className="input" value={newName} onChange={(e) => setNewName(e.target.value)} />
+              </div>
 
-                  <div className="field">
-                    <div className="label">Kategori</div>
-                    <select className="input" value={categoryChoice} onChange={(e) => setCategoryChoice(e.target.value as any)}>
-                      {CATEGORY_OPTIONS.map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+              <div className="field">
+                <div className="label">Kategori</div>
+                <select className="input" value={categoryChoice} onChange={(e) => setCategoryChoice(e.target.value as any)}>
+                  {CATEGORY_OPTIONS.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-                  {categoryChoice === 'Diğer' ? (
-                    <div className="field">
-                      <div className="label">Diğer kategori</div>
-                      <input className="input" value={customCategory} onChange={(e) => setCustomCategory(e.target.value)} placeholder="ör: Anne&Bebek" />
-                    </div>
-                  ) : null}
+              {categoryChoice === 'Diğer' ? (
+                <div className="field">
+                  <div className="label">Diğer kategori</div>
+                  <input className="input" value={customCategory} onChange={(e) => setCustomCategory(e.target.value)} placeholder="ör: Anne&Bebek" />
+                </div>
+              ) : null}
 
-                  <div className="field">
-                    <div className="label">Ürün fotoğrafı (opsiyonel)</div>
-                    <input
-                      className="file"
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
-                      onChange={(e) => setNewPhoto(e.target.files?.[0] ?? null)}
-                    />
-                    <div className="muted small">5MB altı.</div>
-                  </div>
+              <div className="field">
+                <div className="label">Ürün fotoğrafı (opsiyonel)</div>
+                <input
+                  className="file"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+                  onChange={(e) => setNewPhoto(e.target.files?.[0] ?? null)}
+                />
+                <div className="muted small">5MB altı</div>
+              </div>
 
-                  <button className="btn" onClick={addProduct} disabled={addingProduct}>
-                    {addingProduct ? 'Ekleniyor…' : 'Ekle'}
-                  </button>
-                </>
-              )}
+              <button className="btn btnSm" onClick={addProduct} disabled={addingProduct}>
+                {addingProduct ? 'Ekleniyor…' : 'Ekle'}
+              </button>
 
               <div className="divider" />
 
@@ -568,7 +566,7 @@ export default function Home() {
               {recentLoading ? (
                 <div className="muted">Yükleniyor…</div>
               ) : recent.length === 0 ? (
-                <div className="muted">Henüz yok.</div>
+                <div className="muted">Henüz yok</div>
               ) : (
                 <div className="recent">
                   {recent.map((r) => (
@@ -627,167 +625,104 @@ export default function Home() {
 const css = `
 :root{
   --stroke: rgba(255,255,255,.18);
-  --glass: rgba(255,255,255,.08);
-  --glass2: rgba(255,255,255,.12);
-  --text: rgba(255,255,255,.95);
-  --muted: rgba(255,255,255,.70);
-  --shadow: 0 20px 60px rgba(0,0,0,.45);
+  --glass: rgba(255,255,255,.10);
+  --glass2: rgba(255,255,255,.14);
+  --text: rgba(255,255,255,.92);
+  --muted: rgba(255,255,255,.72);
+  --shadow: 0 18px 60px rgba(0,0,0,.35);
   --r: 22px;
   --r2: 16px;
 }
-
 *{ box-sizing:border-box; }
-
-body{
-  margin:0;
-  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
-  color: var(--text);
-}
-
+body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; color: var(--text); }
 .wrap{
   min-height:100vh;
   padding: 18px;
   background:
-    radial-gradient(1200px 700px at 18% 8%, rgba(255,255,255,.08), transparent 55%),
-    radial-gradient(900px 600px at 78% 20%, rgba(255,255,255,.08), transparent 55%),
+    radial-gradient(1200px 700px at 18% 8%, rgba(255,255,255,.10), transparent 55%),
+    radial-gradient(900px 600px at 78% 20%, rgba(255,255,255,.10), transparent 55%),
     linear-gradient(135deg, #4a1677, #c03a9f);
 }
-
-/* ================= NAVBAR ================= */
-
-.app{
-  max-width: 1180px;
-  margin:0 auto;
-  display:flex;
-  flex-direction:column;
-  gap: 14px;
-}
+.center{ min-height: calc(100vh - 36px); display:grid; place-items:center; }
+.app{ max-width: 1180px; margin:0 auto; display:flex; flex-direction:column; gap: 14px; }
 
 .topbar{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-
-  padding: 10px 18px;   /* küçültüldü */
-  border-radius: 20px;
-
-  border:1px solid rgba(255,255,255,.25);
-  background: linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.06));
-  backdrop-filter: blur(22px);
-
-  box-shadow: 0 25px 70px rgba(0,0,0,.55);
-}
-
-.brand{
-  display:flex;
-  align-items:center;
-  gap: 26px;
-}
-
-/* LOGO */
-
-.logo{
-  width: 140px;
-  height: 140px;
-  object-fit: contain;
-
-  padding: 0px; /* sıfıra yakın */
-
-  border-radius: 34px;
-  background: rgba(20,10,35,.95);
-
-  border: 2px solid rgba(255,255,255,.75);
-
-  box-shadow:
-    0 35px 90px rgba(0,0,0,.65),
-    0 0 45px rgba(255,255,255,.35);
-
-  filter: contrast(1.55) brightness(1.3);
-}
-
-.word{
-  font-weight: 800;
-  font-size: 24px;
-  letter-spacing: .28em;
-  text-transform: uppercase;
-}
-
-/* USER AREA */
-
-.right{
-  display:flex;
-  align-items:center;
-  gap: 14px;
-}
-
-.userPill{
-  display:flex;
-  align-items:center;
-  gap:12px;
-
-  padding: 6px 14px; /* inceltildi */
-  border-radius: 999px;
-
-  border:1px solid rgba(255,255,255,.28);
-  background: rgba(0,0,0,.25);
-}
-
-.av{
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
-  object-fit: cover;
-  border:1px solid rgba(255,255,255,.35);
-}
-
-.av.ph{
-  background: rgba(255,255,255,.15);
-}
-
-.uname{
-  font-weight: 700;
-  font-size: 14px;
-}
-
-/* BUTTON */
-
-.btn{
-  appearance:none;
-  border:1px solid rgba(255,255,255,.35);
-  cursor:pointer;
-
-  padding: 8px 18px;  /* inceltildi */
-  border-radius: 16px;
-
-  background: rgba(0,0,0,.45);
-  color: #ffffff;
-
-  font-weight: 800;
-  letter-spacing: .5px;
-
-  transition: all .2s ease;
-}
-
-.btn:hover{
-  background: rgba(255,255,255,.18);
-}
-
-.btn.ghost{
-  background: rgba(255,255,255,.10);
-  border: 1px solid rgba(255,255,255,.25);
-}
-
-/* ================= GENERAL ================= */
-
-.card{
-  padding: 16px;
+  display:flex; align-items:center; justify-content:space-between;
+  padding: 10px 14px;
   border-radius: var(--r);
   border:1px solid var(--stroke);
   background: linear-gradient(180deg, var(--glass2), var(--glass));
   backdrop-filter: blur(18px);
   box-shadow: var(--shadow);
+  position: sticky; top: 12px; z-index: 20;
+}
+.brand{
+  display:flex;
+  align-items:center;
+  gap: 18px;
+}
+.logo{
+  width: 128px;
+  height: 128px;
+  object-fit: contain;
+  padding: 4px;               /* padding neredeyse sıfır */
+  border-radius: 26px;
+  background: rgba(255,255,255,.18);
+  border: 1px solid rgba(255,255,255,.30);
+  box-shadow: 0 20px 55px rgba(0,0,0,.42);
+}
+.word{
+  font-weight: 900;
+  font-size: 26px;
+  letter-spacing: .22em;
+  text-transform: uppercase;
 }
 
+.right{
+  display:flex;
+  align-items:center;         /* hizalama */
+  gap: 12px;
+}
+.userPill{
+  display:flex; align-items:center; gap:10px;
+  padding: 8px 12px;
+  height: 44px;
+  border-radius: 999px;
+  border:1px solid var(--stroke);
+  background: rgba(0,0,0,.18);
+}
+.av{ width: 28px; height: 28px; border-radius: 999px; object-fit: cover; border:1px solid rgba(255,255,255,.22); }
+.av.ph{ background: rgba(255,255,255,.14); }
+.uname{ font-weight: 900; font-size: 13px; }
+
+.btn{
+  appearance:none;
+  border:1px solid rgba(255,255,255,.35);
+  cursor:pointer;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(0,0,0,.35);
+  color: #ffffff;
+  font-weight: 900;
+  letter-spacing: .4px;
+  text-shadow: 0 1px 2px rgba(0,0,0,.6);
+}
+.btnSm{ height: 44px; display:inline-flex; align-items:center; justify-content:center; }
+.btn.ghost{
+  background: rgba(255,255,255,.08);
+  color: var(--text);
+  border: 1px solid var(--stroke);
+}
+.btn:disabled{ opacity:.6; cursor:not-allowed; }
+
+.card{
+  padding: 14px; border-radius: var(--r);
+  border:1px solid var(--stroke);
+  background: linear-gradient(180deg, var(--glass2), var(--glass));
+  backdrop-filter: blur(18px);
+  box-shadow: var(--shadow);
+}
+.authCard{ max-width: 420px; }
 .h1{ font-size: 20px; font-weight: 900; margin-bottom: 8px; }
 .h2{ font-size: 16px; font-weight: 900; margin-bottom: 10px; }
 .muted{ color: var(--muted); }
@@ -799,15 +734,37 @@ body{
   gap: 14px;
   align-items: start;
 }
-
 .tall{ min-height: 520px; }
+.row{ display:flex; gap:10px; align-items:center; margin-bottom: 10px; }
+.label{ font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.field{ margin-top: 10px; }
 
-@media(max-width: 1100px){
-  .grid{ grid-template-columns: 1fr; }
-  .tall{ min-height: auto; }
+.input,.ta,.file, select.input{
+  width:100%;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.16);
+  background: rgba(0,0,0,.22) !important;   /* Artılar/Eksiler beyaz olmasın */
+  color: var(--text) !important;
+  padding: 10px 12px;
+  outline:none;
 }
 .ta{ min-height: 74px; resize: vertical; }
-.file{ padding: 10px; background: rgba(255,255,255,.06); }
+.file{ padding: 10px; background: rgba(0,0,0,.22) !important; }
+
+/* Dosya seç butonu da diğer butonlarla aynı his */
+.file::file-selector-button{
+  appearance:none;
+  border:1px solid rgba(255,255,255,.35);
+  cursor:pointer;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(0,0,0,.35);
+  color: #ffffff;
+  font-weight: 900;
+  letter-spacing: .4px;
+  text-shadow: 0 1px 2px rgba(0,0,0,.6);
+  margin-right: 12px;
+}
 
 .list{
   margin-top: 10px;
@@ -829,7 +786,7 @@ body{
 .thumb.ph{ background: rgba(255,255,255,.10); }
 .mid{ flex:1; min-width:0; }
 .t{ font-weight: 900; }
-.check{ display:flex; align-items:center; gap:10px; margin-top: 10px; font-weight: 800; }
+.check{ display:flex; align-items:center; gap:10px; margin-top: 10px; font-weight: 900; }
 
 .err{
   margin-top: 10px;
@@ -859,6 +816,7 @@ body{
 .okP{ background: rgba(70,255,160,.10); }
 .badP{ background: rgba(255,90,90,.10); }
 .rImg{ width: 100%; max-height: 220px; object-fit: cover; border-radius: 14px; border:1px solid rgba(255,255,255,.18); margin-top: 10px; }
+
 .foot{ text-align:center; padding: 6px 0; }
 
 /* Lightbox */
@@ -917,5 +875,7 @@ body{
   .grid{ grid-template-columns: 1fr; }
   .tall{ min-height: auto; }
   .list,.recent{ max-height: 280px; }
+  .logo{ width: 96px; height: 96px; }
+  .word{ font-size: 22px; }
 }
 `
