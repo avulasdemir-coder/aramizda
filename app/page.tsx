@@ -43,20 +43,13 @@ function safeExt(fileName: string) {
   const ext = p.length > 1 ? p[p.length - 1].toLowerCase() : 'jpg'
   return ext.replace(/[^a-z0-9]/g, '') || 'jpg'
 }
-
 function uid() {
   return Math.random().toString(16).slice(2) + Date.now().toString(16)
 }
-function validateImage(file: File) {
-  const allowed = [
-    'image/jpeg',
-    'image/png',
-    'image/webp',
-    'image/heic',
-    'image/heif',
-  ]
-  const maxSize = 5 * 1024 * 1024 // 5MB
 
+function validateImage(file: File) {
+  const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']
+  const maxSize = 5 * 1024 * 1024 // 5MB
   if (!allowed.includes(file.type)) {
     throw new Error('Sadece JPG, PNG, WEBP veya HEIC/HEIF formatı yükleyebilirsin.')
   }
@@ -64,26 +57,9 @@ function validateImage(file: File) {
     throw new Error('Fotoğraf en fazla 5MB olabilir.')
   }
 }
-function validateImage(file: File) {
-  const allowed = [
-    'image/jpeg',
-    'image/png',
-    'image/webp',
-    'image/heic',
-    'image/heif'
-  ]
-  const maxSize = 5 * 1024 * 1024 // 5MB
 
-  if (!allowed.includes(file.type)) {
-    throw new Error('Sadece JPG, PNG, WEBP veya HEIC/HEIF formatı yükleyebilirsin.')
-  }
-
-  if (file.size > maxSize) {
-    throw new Error('Fotoğraf en fazla 5MB olabilir.')
-  }
-}
-  validateImage(file)
 async function uploadImage(file: File, folder: string) {
+  validateImage(file)
   const ext = safeExt(file.name)
   const path = `${folder}/${uid()}.${ext}`
 
@@ -98,9 +74,18 @@ async function uploadImage(file: File, folder: string) {
   return data.publicUrl
 }
 
+const CATEGORY_OPTIONS = [
+  'Cilt Bakım',
+  'Makyaj',
+  'Saç',
+  'Vücut',
+  'Parfüm',
+  'Güneş',
+  'Ağız Bakım',
+  'Diğer',
+] as const
+
 export default function Home() {
-  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
-const [lightboxAlt, setLightboxAlt] = useState<string>('Fotoğraf')
   // auth
   const [userId, setUserId] = useState<string | null>(null)
 
@@ -121,7 +106,8 @@ const [lightboxAlt, setLightboxAlt] = useState<string>('Fotoğraf')
   // add product (admin)
   const [newBrand, setNewBrand] = useState('')
   const [newName, setNewName] = useState('')
-  const [newCategory, setNewCategory] = useState('')
+  const [categoryChoice, setCategoryChoice] = useState<(typeof CATEGORY_OPTIONS)[number]>('Cilt Bakım')
+  const [customCategory, setCustomCategory] = useState('')
   const [newPhoto, setNewPhoto] = useState<File | null>(null)
   const [addingProduct, setAddingProduct] = useState(false)
   const [addProductMsg, setAddProductMsg] = useState<string | null>(null)
@@ -139,6 +125,10 @@ const [lightboxAlt, setLightboxAlt] = useState<string>('Fotoğraf')
   const [recent, setRecent] = useState<ExperienceRow[]>([])
   const [recentLoading, setRecentLoading] = useState(false)
 
+  // lightbox
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
+  const [lightboxAlt, setLightboxAlt] = useState<string>('Fotoğraf')
+
   const needsUsername = !!userId && (!profile?.username || profile.username.trim().length < 2)
 
   const selectedLabel = useMemo(() => {
@@ -148,7 +138,6 @@ const [lightboxAlt, setLightboxAlt] = useState<string>('Fotoğraf')
   }, [selected])
 
   useEffect(() => {
-    // Boot auth without any "ready" gate (no infinite loader possible)
     supabase.auth.getSession().then(({ data }) => {
       const uid = data.session?.user?.id ?? null
       setUserId(uid)
@@ -164,7 +153,6 @@ const [lightboxAlt, setLightboxAlt] = useState<string>('Fotoğraf')
       setSelected(null)
       setProducts([])
       setRecent([])
-
       if (uid) {
         loadProfile(uid)
         loadRecent()
@@ -190,8 +178,7 @@ const [lightboxAlt, setLightboxAlt] = useState<string>('Fotoğraf')
       setProfileErr(res.error.message)
       return
     }
-
-    setProfile(res.data ?? null)
+    setProfile((res.data as Profile) ?? null)
     setUsernameDraft(res.data?.username ?? '')
   }
 
@@ -206,7 +193,6 @@ const [lightboxAlt, setLightboxAlt] = useState<string>('Fotoğraf')
 
       let avatar_url = profile?.avatar_url ?? null
       if (avatarDraft) {
-        if (avatarDraft.size > 5 * 1024 * 1024) throw new Error('Profil fotoğrafı 5MB altında olmalı.')
         avatar_url = await uploadImage(avatarDraft, 'avatars')
       }
 
@@ -241,7 +227,6 @@ const [lightboxAlt, setLightboxAlt] = useState<string>('Fotoğraf')
     setPErr(null)
     setAddProductMsg(null)
     setPLoading(true)
-
     try {
       const term = q.trim()
       if (!term) {
@@ -268,22 +253,20 @@ const [lightboxAlt, setLightboxAlt] = useState<string>('Fotoğraf')
   async function addProduct() {
     setPErr(null)
     setAddProductMsg(null)
-
     try {
       if (!userId) throw new Error('Giriş gerekli.')
       if (!profile?.is_admin) throw new Error('Ürün ekleme yetkin yok.')
       const brand = newBrand.trim()
       const name = newName.trim()
-      const category = newCategory.trim() || null
       if (!brand || !name) throw new Error('Marka ve ürün adı zorunlu.')
+
+      const category =
+        categoryChoice === 'Diğer' ? (customCategory.trim() || null) : (categoryChoice as string)
 
       setAddingProduct(true)
 
       let image_url: string | null = null
-      if (newPhoto) {
-        if (newPhoto.size > 5 * 1024 * 1024) throw new Error('Ürün fotoğrafı 5MB altında olmalı.')
-        image_url = await uploadImage(newPhoto, 'products')
-      }
+      if (newPhoto) image_url = await uploadImage(newPhoto, 'products')
 
       const ins = await supabase
         .from('products')
@@ -296,10 +279,10 @@ const [lightboxAlt, setLightboxAlt] = useState<string>('Fotoğraf')
       setAddProductMsg('Ürün eklendi.')
       setNewBrand('')
       setNewName('')
-      setNewCategory('')
+      setCategoryChoice('Cilt Bakım')
+      setCustomCategory('')
       setNewPhoto(null)
 
-      // seç ve arama sonucunu tazele
       setSelected(ins.data as Product)
       if (q.trim()) await searchProducts()
     } catch (e: any) {
@@ -319,10 +302,7 @@ const [lightboxAlt, setLightboxAlt] = useState<string>('Fotoğraf')
       setAddingExp(true)
 
       let image_url: string | null = null
-      if (expPhoto) {
-        if (expPhoto.size > 5 * 1024 * 1024) throw new Error('Deneyim fotoğrafı 5MB altında olmalı.')
-        image_url = await uploadImage(expPhoto, 'experiences')
-      }
+      if (expPhoto) image_url = await uploadImage(expPhoto, 'experiences')
 
       const ins = await supabase
         .from('experiences')
@@ -362,8 +342,8 @@ const [lightboxAlt, setLightboxAlt] = useState<string>('Fotoğraf')
         .select(
           `
           id,user_id,product_id,rating,pros,cons,would_buy_again,image_url,created_at,
-          product:products(id,brand,name,category,image_url,created_at),
-          author:profiles(username,avatar_url)
+          product:products!experiences_product_id_fkey(id,brand,name,category,image_url,created_at),
+          author:profiles!experiences_user_id_fkey(username,avatar_url)
         `
         )
         .order('created_at', { ascending: false })
@@ -371,8 +351,8 @@ const [lightboxAlt, setLightboxAlt] = useState<string>('Fotoğraf')
 
       if (error) throw error
       setRecent(((data as any[]) || []) as ExperienceRow[])
-    } catch {
-      // sessiz
+    } catch (e) {
+      // hata mesajı istersen açarız; şimdilik sessiz
     } finally {
       setRecentLoading(false)
     }
@@ -387,7 +367,9 @@ const [lightboxAlt, setLightboxAlt] = useState<string>('Fotoğraf')
           <div className="card">
             <div className="h1">Giriş yap</div>
             <div className="muted">Devam etmek için Google ile giriş yap.</div>
-            <button className="btn" onClick={signInWithGoogle}>Google ile giriş</button>
+            <button className="btn" onClick={signInWithGoogle}>
+              Google ile giriş
+            </button>
           </div>
         </div>
       </div>
@@ -401,7 +383,14 @@ const [lightboxAlt, setLightboxAlt] = useState<string>('Fotoğraf')
       <div className="app">
         <header className="topbar">
           <div className="brand">
-            <img className="logo" src="/logo.png" alt="ARAMIZDA" onError={(e) => { (e.currentTarget as any).style.display = 'none' }} />
+            <img
+              className="logo"
+              src="/logo.png"
+              alt="ARAMIZDA"
+              onError={(e) => {
+                ;(e.currentTarget as any).style.display = 'none'
+              }}
+            />
             <div className="word">ARAMIZDA</div>
           </div>
 
@@ -410,7 +399,9 @@ const [lightboxAlt, setLightboxAlt] = useState<string>('Fotoğraf')
               {profile?.avatar_url ? <img className="av" src={profile.avatar_url} alt="" /> : <div className="av ph" />}
               <div className="uname">{profile?.username || 'Profil'}</div>
             </div>
-            <button className="btn ghost" onClick={signOut}>Çıkış</button>
+            <button className="btn ghost" onClick={signOut}>
+              Çıkış
+            </button>
           </div>
         </header>
 
@@ -426,7 +417,12 @@ const [lightboxAlt, setLightboxAlt] = useState<string>('Fotoğraf')
 
             <div className="field">
               <div className="label">Profil fotoğrafı (opsiyonel)</div>
-              <input className="file" type="file" accept="image/*" onChange={(e) => setAvatarDraft(e.target.files?.[0] ?? null)} />
+              <input
+                className="file"
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+                onChange={(e) => setAvatarDraft(e.target.files?.[0] ?? null)}
+              />
               <div className="muted small">5MB altı.</div>
             </div>
 
@@ -443,7 +439,9 @@ const [lightboxAlt, setLightboxAlt] = useState<string>('Fotoğraf')
               <div className="h2">Ürün Ara</div>
               <div className="row">
                 <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="ör: bee beauty" />
-                <button className="btn" onClick={searchProducts} disabled={pLoading}>{pLoading ? '…' : 'Ara'}</button>
+                <button className="btn" onClick={searchProducts} disabled={pLoading}>
+                  {pLoading ? '…' : 'Ara'}
+                </button>
               </div>
 
               {pErr ? <div className="err">{pErr}</div> : null}
@@ -456,21 +454,23 @@ const [lightboxAlt, setLightboxAlt] = useState<string>('Fotoğraf')
                   products.map((p) => (
                     <button key={p.id} className={`item ${selected?.id === p.id ? 'active' : ''}`} onClick={() => setSelected(p)}>
                       {p.image_url ? (
-  <img
-    className="thumb clickable"
-    src={p.image_url}
-    alt=""
-    onClick={(e) => {
-      e.stopPropagation()
-      setLightboxAlt(`${p.brand} — ${p.name}`)
-      setLightboxUrl(p.image_url!)
-    }}
-  />
-) : (
-  <div className="thumb ph" />
-)}
+                        <img
+                          className="thumb clickable"
+                          src={p.image_url}
+                          alt=""
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setLightboxAlt(`${p.brand} — ${p.name}`)
+                            setLightboxUrl(p.image_url!)
+                          }}
+                        />
+                      ) : (
+                        <div className="thumb ph" />
+                      )}
                       <div className="mid">
-                        <div className="t">{p.brand} — {p.name}</div>
+                        <div className="t">
+                          {p.brand} — {p.name}
+                        </div>
                         <div className="muted small">{p.category || 'Kategori yok'}</div>
                       </div>
                     </button>
@@ -487,7 +487,11 @@ const [lightboxAlt, setLightboxAlt] = useState<string>('Fotoğraf')
               <div className="field">
                 <div className="label">Puan</div>
                 <select className="input" value={rating} onChange={(e) => setRating(parseInt(e.target.value, 10))}>
-                  {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}</option>)}
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -508,7 +512,12 @@ const [lightboxAlt, setLightboxAlt] = useState<string>('Fotoğraf')
 
               <div className="field">
                 <div className="label">Deneyim fotoğrafı (opsiyonel)</div>
-                <input className="file" type="file" accept="image/*" onChange={(e) => setExpPhoto(e.target.files?.[0] ?? null)} />
+                <input
+                  className="file"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+                  onChange={(e) => setExpPhoto(e.target.files?.[0] ?? null)}
+                />
                 <div className="muted small">5MB altı.</div>
               </div>
 
@@ -517,6 +526,7 @@ const [lightboxAlt, setLightboxAlt] = useState<string>('Fotoğraf')
               <button className="btn" disabled={!selected || addingExp} onClick={addExperience}>
                 {addingExp ? 'Gönderiliyor…' : 'Gönder'}
               </button>
+
               {!selected ? <div className="muted small" style={{ marginTop: 10 }}>Önce soldan ürün seç.</div> : null}
             </section>
 
@@ -533,17 +543,38 @@ const [lightboxAlt, setLightboxAlt] = useState<string>('Fotoğraf')
                     <div className="label">Marka</div>
                     <input className="input" value={newBrand} onChange={(e) => setNewBrand(e.target.value)} />
                   </div>
+
                   <div className="field">
                     <div className="label">Ürün adı</div>
                     <input className="input" value={newName} onChange={(e) => setNewName(e.target.value)} />
                   </div>
+
                   <div className="field">
                     <div className="label">Kategori</div>
-                    <input className="input" value={newCategory} onChange={(e) => setNewCategory(e.target.value)} />
+                    <select className="input" value={categoryChoice} onChange={(e) => setCategoryChoice(e.target.value as any)}>
+                      {CATEGORY_OPTIONS.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
                   </div>
+
+                  {categoryChoice === 'Diğer' ? (
+                    <div className="field">
+                      <div className="label">Diğer kategori</div>
+                      <input className="input" value={customCategory} onChange={(e) => setCustomCategory(e.target.value)} placeholder="ör: Anne&Bebek" />
+                    </div>
+                  ) : null}
+
                   <div className="field">
                     <div className="label">Ürün fotoğrafı (opsiyonel)</div>
-                    <input className="file" type="file" accept="image/*" onChange={(e) => setNewPhoto(e.target.files?.[0] ?? null)} />
+                    <input
+                      className="file"
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+                      onChange={(e) => setNewPhoto(e.target.files?.[0] ?? null)}
+                    />
                     <div className="muted small">5MB altı.</div>
                   </div>
 
@@ -572,20 +603,23 @@ const [lightboxAlt, setLightboxAlt] = useState<string>('Fotoğraf')
                         </div>
                         <div className="badge">{typeof r.rating === 'number' ? `${r.rating}/5` : '-'}</div>
                       </div>
+
                       <div className="muted small">{r.product ? `${r.product.brand} — ${r.product.name}` : 'Ürün'}</div>
+
                       {r.pros ? <div className="pill okP">+ {r.pros}</div> : null}
                       {r.cons ? <div className="pill badP">- {r.cons}</div> : null}
+
                       {r.image_url ? (
-  <img
-    className="rImg clickable"
-    src={r.image_url}
-    alt=""
-    onClick={() => {
-      setLightboxAlt('Deneyim fotoğrafı')
-      setLightboxUrl(r.image_url!)
-    }}
-  />
-) : null}
+                        <img
+                          className="rImg clickable"
+                          src={r.image_url}
+                          alt=""
+                          onClick={() => {
+                            setLightboxAlt('Deneyim fotoğrafı')
+                            setLightboxUrl(r.image_url!)
+                          }}
+                        />
+                      ) : null}
                     </div>
                   ))}
                 </div>
@@ -595,28 +629,18 @@ const [lightboxAlt, setLightboxAlt] = useState<string>('Fotoğraf')
         )}
 
         <div className="foot muted small">© ARAMIZDA</div>
+
         {lightboxUrl ? (
-  <div
-    className="lb"
-    onClick={() => setLightboxUrl(null)}
-    role="dialog"
-    aria-modal="true"
-  >
-    <div className="lbInner" onClick={(e) => e.stopPropagation()}>
-      <button
-        className="lbClose"
-        onClick={() => setLightboxUrl(null)}
-        aria-label="Kapat"
-      >
-        ×
-      </button>
-
-      <img className="lbImg" src={lightboxUrl} alt={lightboxAlt} />
-
-      <div className="lbCap">{lightboxAlt}</div>
-    </div>
-  </div>
-) : null}
+          <div className="lb" onClick={() => setLightboxUrl(null)} role="dialog" aria-modal="true">
+            <div className="lbInner" onClick={(e) => e.stopPropagation()}>
+              <button className="lbClose" onClick={() => setLightboxUrl(null)} aria-label="Kapat">
+                ×
+              </button>
+              <img className="lbImg" src={lightboxUrl} alt={lightboxAlt} />
+              <div className="lbCap">{lightboxAlt}</div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   )
@@ -667,6 +691,7 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
 .av{ width: 28px; height: 28px; border-radius: 999px; object-fit: cover; border:1px solid rgba(255,255,255,.22); }
 .av.ph{ background: rgba(255,255,255,.14); }
 .uname{ font-weight: 800; font-size: 13px; }
+
 .btn{
   appearance:none;
   border:1px solid rgba(255,255,255,.35);
@@ -685,6 +710,7 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   border: 1px solid var(--stroke);
 }
 .btn:disabled{ opacity:.6; cursor:not-allowed; }
+
 .card{
   padding: 14px; border-radius: var(--r);
   border:1px solid var(--stroke);
@@ -696,6 +722,7 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
 .h2{ font-size: 16px; font-weight: 900; margin-bottom: 10px; }
 .muted{ color: var(--muted); }
 .small{ font-size: 12px; }
+
 .grid{
   display:grid;
   grid-template-columns: 1fr 1fr 1fr;
@@ -717,6 +744,7 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
 }
 .ta{ min-height: 74px; resize: vertical; }
 .file{ padding: 10px; background: rgba(255,255,255,.06); }
+
 .list{
   margin-top: 10px;
   display:flex; flex-direction:column; gap:10px;
@@ -738,6 +766,7 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
 .mid{ flex:1; min-width:0; }
 .t{ font-weight: 900; }
 .check{ display:flex; align-items:center; gap:10px; margin-top: 10px; font-weight: 800; }
+
 .err{
   margin-top: 10px;
   padding: 10px 12px;
@@ -752,6 +781,7 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   background: rgba(70,255,160,.14);
   border: 1px solid rgba(120,255,190,.24);
 }
+
 .divider{ height: 1px; background: rgba(255,255,255,.16); margin: 14px 0; }
 .recent{ display:flex; flex-direction:column; gap: 10px; max-height: 360px; overflow:auto; padding-right: 2px; }
 .r{ border:1px solid rgba(255,255,255,.14); background: rgba(0,0,0,.14); border-radius: var(--r2); padding: 10px; }
@@ -765,15 +795,11 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
 .okP{ background: rgba(70,255,160,.10); }
 .badP{ background: rgba(255,90,90,.10); }
 .rImg{ width: 100%; max-height: 220px; object-fit: cover; border-radius: 14px; border:1px solid rgba(255,255,255,.18); margin-top: 10px; }
+
 .foot{ text-align:center; padding: 6px 0; }
 
-@media(max-width: 1100px){
-  .grid{ grid-template-columns: 1fr; }
-  .tall{ min-height: auto; }
-  .list,.recent{ max-height: 280px; }
-}
-  .clickable { cursor: zoom-in; }
-
+/* Lightbox */
+.clickable { cursor: zoom-in; }
 .lb{
   position: fixed;
   inset: 0;
@@ -784,7 +810,6 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   place-items: center;
   padding: 18px;
 }
-
 .lbInner{
   width: min(920px, 96vw);
   max-height: 90vh;
@@ -798,7 +823,6 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   flex-direction: column;
   gap: 10px;
 }
-
 .lbClose{
   position: absolute;
   top: 10px;
@@ -812,7 +836,6 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   font-size: 22px;
   cursor: pointer;
 }
-
 .lbImg{
   width: 100%;
   height: auto;
@@ -821,10 +844,15 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   border-radius: 14px;
   border: 1px solid rgba(255,255,255,.14);
 }
-
 .lbCap{
   font-size: 12px;
   color: rgba(255,255,255,.75);
   text-align: center;
+}
+
+@media(max-width: 1100px){
+  .grid{ grid-template-columns: 1fr; }
+  .tall{ min-height: auto; }
+  .list,.recent{ max-height: 280px; }
 }
 `
