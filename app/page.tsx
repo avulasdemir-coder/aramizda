@@ -360,14 +360,15 @@ export default function Home() {
       <div className="app">
         <header className="topbar">
           <div className="brand">
-            <img
-              className="logo"
-              src="/logo.png"
-              alt="ARAMIZDA"
-              onError={(e) => {
-                ;(e.currentTarget as any).style.display = 'none'
-              }}
-            />
+           <img
+  className="logo"
+  src="/logo.png"
+  alt="ARAMIZDA"
+  style={{ transform: "scale(1.12)" }}
+  onError={(e) => {
+    ;(e.currentTarget as any).style.display = 'none'
+  }}
+/>
             <div className="word">ARAMIZDA</div>
           </div>
 
@@ -666,19 +667,19 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   gap: 18px;
 }
 .logo{
-  width: 118px;
-  height: 118px;
+  width: 124px;
+  height: 124px;
 
-  padding: 2px;                 /* neredeyse sıfır */
-  object-fit: cover;            /* iç görsel daha dolu */
+  padding: 0;                 /* padding tamamen kalktı */
+  object-fit: contain;
 
-  border-radius: 28px;
+  border-radius: 30px;
 
-  background: #0e0e14;          /* eski siyah premium zemin geri */
+  background: #0e0e14;
   border: 1px solid rgba(255,255,255,.18);
 
   box-shadow:
-    0 30px 70px rgba(0,0,0,.55),
+    0 35px 80px rgba(0,0,0,.55),
     inset 0 0 0 1px rgba(255,255,255,.06);
 }
 .word{
