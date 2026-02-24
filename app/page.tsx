@@ -116,7 +116,10 @@ export default function Home() {
   // lightbox
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [lightboxAlt, setLightboxAlt] = useState<string>('Fotoğraf')
+
+  // profile modal
   const [profileOpen, setProfileOpen] = useState(false)
+
   const needsUsername = !!userId && (!profile?.username || profile.username.trim().length < 2)
 
   const selectedLabel = useMemo(() => {
@@ -187,6 +190,7 @@ export default function Home() {
       setAvatarDraft(null)
     } catch (e: any) {
       setProfileErr(e?.message ?? 'Profil kaydedilemedi')
+      throw e
     } finally {
       setSavingProfile(false)
     }
@@ -264,7 +268,12 @@ export default function Home() {
       setSelected(ins.data as Product)
       if (q.trim()) await searchProducts()
     } catch (e: any) {
-      setPErr(e?.message ?? 'Ürün eklenemedi')
+      const msg = (e?.message ?? 'Ürün eklenemedi') as string
+      if (msg.toLowerCase().includes('duplicate')) {
+        setPErr('Bu ürün zaten ekli')
+      } else {
+        setPErr(msg)
+      }
     } finally {
       setAddingProduct(false)
     }
@@ -336,27 +345,24 @@ export default function Home() {
     }
   }
 
-if (!userId) {
-  return (
-    <div className="wrap">
-      <style>{css}</style>
-      <div className="center">
-        <div className="card authCard">
-          <div className="h1">Giriş</div>
-          <div className="muted">Devam etmek için Google ile giriş yap</div>
+  if (!userId) {
+    return (
+      <div className="wrap">
+        <style>{css}</style>
+        <div className="center">
+          <div className="card authCard">
+            <div className="h1">Giriş</div>
+            <div className="muted">Devam etmek için Google ile giriş yap</div>
 
-          <button
-            className="btn btnSm"
-            onClick={signInWithGoogle}
-          >
-            Google ile giriş
-          </button>
-
+            <button className="btn btnSm" onClick={signInWithGoogle}>
+              Google ile giriş
+            </button>
+          </div>
         </div>
       </div>
-    </div>
-  )
-}
+    )
+  }
+
   return (
     <div className="wrap">
       <style>{css}</style>
@@ -364,32 +370,33 @@ if (!userId) {
       <div className="app">
         <header className="topbar">
           <div className="brand">
-           <img
-  className="logo"
-  src="/logo.png"
-  alt="ARAMIZDA"
-  style={{ transform: "scale(1.12)" }}
-  onError={(e) => {
-    ;(e.currentTarget as any).style.display = 'none'
-  }}
-/>
+            <img
+              className="logo"
+              src="/logo.png"
+              alt="ARAMIZDA"
+              style={{ transform: 'scale(1.12)' }}
+              onError={(e) => {
+                ;(e.currentTarget as any).style.display = 'none'
+              }}
+            />
             <div className="word">ARAMIZDA</div>
           </div>
 
           <div className="right">
             <button
-  type="button"
-  className="userPill"
-  onClick={() => {
-    setUsernameDraft(profile?.username ?? '')
-    setAvatarDraft(null)
-    setProfileErr(null)
-    setProfileOpen(true)
-  }}
->
-  {profile?.avatar_url ? <img className="av" src={profile.avatar_url} alt="" /> : <div className="av ph" />}
-  <div className="uname">{profile?.username || 'Profil'}</div>
-</button>
+              type="button"
+              className="userPill"
+              onClick={() => {
+                setUsernameDraft(profile?.username ?? '')
+                setAvatarDraft(null)
+                setProfileErr(null)
+                setProfileOpen(true)
+              }}
+            >
+              {profile?.avatar_url ? <img className="av" src={profile.avatar_url} alt="" /> : <div className="av ph" />}
+              <div className="uname">{profile?.username || 'Profil'}</div>
+            </button>
+
             <button className="btn ghost btnSm" onClick={signOut}>
               Çıkış
             </button>
@@ -419,7 +426,7 @@ if (!userId) {
 
             {profileErr ? <div className="err">{profileErr}</div> : null}
 
-            <button className="btn" onClick={saveProfile} disabled={savingProfile}>
+            <button className="btn btnSm" onClick={saveProfile} disabled={savingProfile}>
               {savingProfile ? 'Kaydediliyor…' : 'Devam'}
             </button>
           </div>
@@ -447,43 +454,31 @@ if (!userId) {
               {addProductMsg ? <div className="ok">{addProductMsg}</div> : null}
 
               <div className="list">
-  {products.length === 0 ? (
-    <div className="muted small">
-      {q.trim()
-        ? 'Ürün henüz eklenmemiş, eklemek ister misiniz'
-        : 'Ürün arayın, sonuçlar burada görünecek'}
-      {q.trim() ? (
-        <div style={{ marginTop: 10 }}>
-          <button
-            className="btn btnSm"
-            type="button"
-            onClick={() => {
-              // İstersen burada sağdaki Ürün Ekle alanını otomatik doldurabiliriz
-              // Şimdilik sadece kullanıcıya yönlendirme yapıyoruz
-              const el = document.getElementById('add-product')
-              el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-            }}
-          >
-            Ürün ekle
-          </button>
-        </div>
-      ) : null}
-    </div>
-  ) : (
-    products.map((p) => (
-      <button
-        key={p.id}
-        className={`item ${selected?.id === p.id ? 'active' : ''}`}
-        onClick={() => setSelected(p)}
-      >
-        {/* mevcut içerik aynı */}
-      </button>
-    ))
-  )}
-</div>
+                {products.length === 0 ? (
+                  <div className="muted small">
+                    {q.trim() ? 'Ürün henüz eklenmemiş, eklemek ister misiniz' : 'Ürün arayın, sonuçlar burada görünecek'}
+                    {q.trim() ? (
+                      <div style={{ marginTop: 10 }}>
+                        <button
+                          className="btn btnSm"
+                          type="button"
+                          onClick={() => {
+                            const el = document.getElementById('add-product')
+                            el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                          }}
+                        >
+                          Ürün ekle
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
                 ) : (
                   products.map((p) => (
-                    <button key={p.id} className={`item ${selected?.id === p.id ? 'active' : ''}`} onClick={() => setSelected(p)}>
+                    <button
+                      key={p.id}
+                      className={`item ${selected?.id === p.id ? 'active' : ''}`}
+                      onClick={() => setSelected(p)}
+                    >
                       {p.image_url ? (
                         <img
                           className="thumb clickable"
@@ -498,6 +493,7 @@ if (!userId) {
                       ) : (
                         <div className="thumb ph" />
                       )}
+
                       <div className="mid">
                         <div className="t">
                           {p.brand} — {p.name}
@@ -511,7 +507,7 @@ if (!userId) {
             </section>
 
             {/* Middle */}
-            <<section id="add-product" className="card tall">
+            <section className="card tall">
               <div className="h2">Deneyim Ekle</div>
               <div className="muted small">{selectedLabel}</div>
 
@@ -560,7 +556,7 @@ if (!userId) {
             </section>
 
             {/* Right */}
-            <section className="card tall">
+            <section id="add-product" className="card tall">
               <div className="h2">Ürün Ekle</div>
 
               <div className="field">
@@ -651,50 +647,56 @@ if (!userId) {
         )}
 
         <div className="foot muted small">© ARAMIZDA</div>
+
+        {/* Profile modal */}
         {profileOpen ? (
-  <div className="pm" onClick={() => setProfileOpen(false)} role="dialog" aria-modal="true">
-    <div className="pmInner" onClick={(e) => e.stopPropagation()}>
-      <button className="pmClose" onClick={() => setProfileOpen(false)} aria-label="Kapat">
-        ×
-      </button>
+          <div className="pm" onClick={() => setProfileOpen(false)} role="dialog" aria-modal="true">
+            <div className="pmInner" onClick={(e) => e.stopPropagation()}>
+              <button className="pmClose" onClick={() => setProfileOpen(false)} aria-label="Kapat">
+                ×
+              </button>
 
-      <div className="h2">Profil</div>
+              <div className="h2">Profil</div>
 
-      <div className="field">
-        <div className="label">Kullanıcı adı</div>
-        <input className="input" value={usernameDraft} onChange={(e) => setUsernameDraft(e.target.value)} />
-      </div>
+              <div className="field">
+                <div className="label">Kullanıcı adı</div>
+                <input className="input" value={usernameDraft} onChange={(e) => setUsernameDraft(e.target.value)} />
+              </div>
 
-      <div className="field">
-        <div className="label">Profil fotoğrafı</div>
-        <input
-          className="file"
-          type="file"
-          accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
-          onChange={(e) => setAvatarDraft(e.target.files?.[0] ?? null)}
-        />
-        <div className="muted small">5MB altı</div>
-      </div>
+              <div className="field">
+                <div className="label">Profil fotoğrafı</div>
+                <input
+                  className="file"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+                  onChange={(e) => setAvatarDraft(e.target.files?.[0] ?? null)}
+                />
+                <div className="muted small">5MB altı</div>
+              </div>
 
-      {profileErr ? <div className="err">{profileErr}</div> : null}
+              {profileErr ? <div className="err">{profileErr}</div> : null}
 
-      <div className="row" style={{ justifyContent: 'flex-end', marginTop: 12 }}>
-        <button
-          className="btn btnSm"
-          onClick={async () => {
-            await saveProfile()
-            // kaydetme başarılıysa kapat
-            setProfileOpen(false)
-          }}
-          disabled={savingProfile}
-        >
-          {savingProfile ? 'Kaydediliyor…' : 'Kaydet'}
-        </button>
-      </div>
-    </div>
-  </div>
-) : null}
+              <div className="row" style={{ justifyContent: 'flex-end', marginTop: 12 }}>
+                <button
+                  className="btn btnSm"
+                  onClick={async () => {
+                    try {
+                      await saveProfile()
+                      setProfileOpen(false)
+                    } catch {
+                      // hata zaten ekranda
+                    }
+                  }}
+                  disabled={savingProfile}
+                >
+                  {savingProfile ? 'Kaydediliyor…' : 'Kaydet'}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
+        {/* Lightbox */}
         {lightboxUrl ? (
           <div className="lb" onClick={() => setLightboxUrl(null)} role="dialog" aria-modal="true">
             <div className="lbInner" onClick={(e) => e.stopPropagation()}>
@@ -724,6 +726,7 @@ const css = `
 }
 *{ box-sizing:border-box; }
 body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; color: var(--text); }
+
 .wrap{
   min-height:100vh;
   padding: 18px;
@@ -739,109 +742,70 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   display:flex;
   align-items:center;
   justify-content:space-between;
-
   padding: 12px 20px;
-  min-height: 96px;     /* logo büyük olduğu için denge */
-
   border-radius: var(--r);
   border:1px solid var(--stroke);
   background: linear-gradient(180deg, var(--glass2), var(--glass));
   backdrop-filter: blur(18px);
   box-shadow: var(--shadow);
+  position: sticky; top: 12px; z-index: 20;
 }
-.brand{
-  display:flex;
-  align-items:center;
-  gap: 18px;
-}
+.brand{ display:flex; align-items:center; gap: 18px; }
+
 .logo{
   width: 124px;
   height: 124px;
-
-  padding: 0;                 /* padding tamamen kalktı */
+  padding: 0;
   object-fit: contain;
-
   border-radius: 30px;
-
   background: #0e0e14;
   border: 1px solid rgba(255,255,255,.18);
-
   box-shadow:
     0 35px 80px rgba(0,0,0,.55),
     inset 0 0 0 1px rgba(255,255,255,.06);
 }
-.word{
-  font-weight: 900;
-  font-size: 26px;
-  letter-spacing: .22em;
-  text-transform: uppercase;
-}
 
-.right{
-  display:flex;
-  align-items:center;
-  gap: 16px;
-}
+.word{ font-weight: 900; font-size: 26px; letter-spacing: .22em; text-transform: uppercase; }
+
+.right{ display:flex; align-items:center; gap: 16px; }
+
 .userPill{
-  display:flex;
-  align-items:center;
-  justify-content:center;
+  display:flex; align-items:center; gap:12px;
   height: 46px;
   padding: 0 16px;
+  border-radius: 999px;
+  border:1px solid var(--stroke);
+  background: rgba(0,0,0,.18);
+  color: var(--text);
+  cursor: pointer;
 }
+.av{ width: 30px; height: 30px; border-radius: 999px; object-fit: cover; border:1px solid rgba(255,255,255,.22); }
+.av.ph{ background: rgba(255,255,255,.14); }
+.uname{ font-weight: 900; font-size: 13px; }
+
 .btn{
   appearance:none;
   border:1px solid rgba(255,255,255,.28);
   cursor:pointer;
   padding: 12px 18px;
   border-radius: 16px;
-
-  background: linear-gradient(
-    145deg,
-    rgba(0,0,0,.55),
-    rgba(0,0,0,.35)
-  );
-
+  background: linear-gradient(145deg, rgba(0,0,0,.55), rgba(0,0,0,.35));
   color: #ffffff;
   font-weight: 900;
   letter-spacing: .6px;
-
-  box-shadow:
-    0 12px 30px rgba(0,0,0,.45),
-    inset 0 1px 0 rgba(255,255,255,.06);
-
+  box-shadow: 0 12px 30px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.06);
   transition: all .2s ease;
 }
-
 .btn:hover{
   transform: translateY(-2px);
-  box-shadow:
-    0 18px 40px rgba(0,0,0,.55),
-    inset 0 1px 0 rgba(255,255,255,.08);
+  box-shadow: 0 18px 40px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.08);
 }
-.av{ width: 28px; height: 28px; border-radius: 999px; object-fit: cover; border:1px solid rgba(255,255,255,.22); }
-.av.ph{ background: rgba(255,255,255,.14); }
-.uname{ font-weight: 900; font-size: 13px; }
-
-.btn{
-  appearance:none;
-  border:1px solid rgba(255,255,255,.35);
-  cursor:pointer;
-  padding: 10px 14px;
-  border-radius: 14px;
-  background: rgba(0,0,0,.35);
-  color: #ffffff;
-  font-weight: 900;
-  letter-spacing: .4px;
-  text-shadow: 0 1px 2px rgba(0,0,0,.6);
-}
-.btnSm{ height: 44px; display:inline-flex; align-items:center; justify-content:center; }
 .btn.ghost{
-  background: rgba(255,255,255,.08);
-  color: var(--text);
-  border: 1px solid var(--stroke);
+  background: rgba(255,255,255,.10);
+  border:1px solid rgba(255,255,255,.20);
 }
-.btn:disabled{ opacity:.6; cursor:not-allowed; }
+.btn:disabled{ opacity:.6; cursor:not-allowed; transform:none; }
+.btnSm{ height: 46px; display:inline-flex; align-items:center; justify-content:center; padding: 0 18px; }
 
 .card{
   padding: 14px; border-radius: var(--r);
@@ -851,6 +815,7 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   box-shadow: var(--shadow);
 }
 .authCard{ max-width: 420px; }
+
 .h1{ font-size: 20px; font-weight: 900; margin-bottom: 8px; }
 .h2{ font-size: 16px; font-weight: 900; margin-bottom: 10px; }
 .muted{ color: var(--muted); }
@@ -863,6 +828,7 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   align-items: start;
 }
 .tall{ min-height: 520px; }
+
 .row{ display:flex; gap:10px; align-items:center; margin-bottom: 10px; }
 .label{ font-size: 12px; color: var(--muted); margin-bottom: 6px; }
 .field{ margin-top: 10px; }
@@ -871,26 +837,25 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   width:100%;
   border-radius: 14px;
   border: 1px solid rgba(255,255,255,.16);
-  background: rgba(0,0,0,.22) !important;   /* Artılar/Eksiler beyaz olmasın */
+  background: rgba(0,0,0,.22) !important;
   color: var(--text) !important;
   padding: 10px 12px;
   outline:none;
 }
 .ta{ min-height: 74px; resize: vertical; }
-.file{ padding: 10px; background: rgba(0,0,0,.22) !important; }
+.file{ padding: 10px; }
 
-/* Dosya seç butonu da diğer butonlarla aynı his */
 .file::file-selector-button{
   appearance:none;
-  border:1px solid rgba(255,255,255,.35);
+  border:1px solid rgba(255,255,255,.28);
   cursor:pointer;
   padding: 10px 14px;
-  border-radius: 14px;
-  background: rgba(0,0,0,.35);
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(0,0,0,.55), rgba(0,0,0,.35));
   color: #ffffff;
   font-weight: 900;
-  letter-spacing: .4px;
-  text-shadow: 0 1px 2px rgba(0,0,0,.6);
+  letter-spacing: .6px;
+  box-shadow: 0 12px 30px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.06);
   margin-right: 12px;
 }
 
@@ -947,8 +912,9 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
 
 .foot{ text-align:center; padding: 6px 0; }
 
-/* Lightbox */
 .clickable { cursor: zoom-in; }
+
+/* Lightbox */
 .lb{
   position: fixed;
   inset: 0;
@@ -999,18 +965,8 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   text-align: center;
 }
 
-@media(max-width: 1100px){
-  .grid{ grid-template-columns: 1fr; }
-  .tall{ min-height: auto; }
-  .list,.recent{ max-height: 280px; }
-  .logo{ width: 96px; height: 96px; }
-  .word{ font-size: 22px; }
-}
-textarea{
-  background: rgba(0,0,0,.22) !important;
-  color: var(--text) !important;
-}
-  .pm{
+/* Profile Modal */
+.pm{
   position: fixed;
   inset: 0;
   z-index: 9999;
@@ -1041,5 +997,13 @@ textarea{
   color: #fff;
   font-size: 22px;
   cursor: pointer;
+}
+
+@media(max-width: 1100px){
+  .grid{ grid-template-columns: 1fr; }
+  .tall{ min-height: auto; }
+  .list,.recent{ max-height: 280px; }
+  .logo{ width: 96px; height: 96px; }
+  .word{ font-size: 22px; }
 }
 `
