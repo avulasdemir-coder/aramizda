@@ -116,7 +116,7 @@ export default function Home() {
   // lightbox
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [lightboxAlt, setLightboxAlt] = useState<string>('Fotoğraf')
-
+  const [profileOpen, setProfileOpen] = useState(false)
   const needsUsername = !!userId && (!profile?.username || profile.username.trim().length < 2)
 
   const selectedLabel = useMemo(() => {
@@ -373,10 +373,19 @@ export default function Home() {
           </div>
 
           <div className="right">
-            <div className="userPill">
-              {profile?.avatar_url ? <img className="av" src={profile.avatar_url} alt="" /> : <div className="av ph" />}
-              <div className="uname">{profile?.username || 'Profil'}</div>
-            </div>
+            <button
+  type="button"
+  className="userPill"
+  onClick={() => {
+    setUsernameDraft(profile?.username ?? '')
+    setAvatarDraft(null)
+    setProfileErr(null)
+    setProfileOpen(true)
+  }}
+>
+  {profile?.avatar_url ? <img className="av" src={profile.avatar_url} alt="" /> : <div className="av ph" />}
+  <div className="uname">{profile?.username || 'Profil'}</div>
+</button>
             <button className="btn ghost btnSm" onClick={signOut}>
               Çıkış
             </button>
@@ -606,6 +615,49 @@ export default function Home() {
         )}
 
         <div className="foot muted small">© ARAMIZDA</div>
+        {profileOpen ? (
+  <div className="pm" onClick={() => setProfileOpen(false)} role="dialog" aria-modal="true">
+    <div className="pmInner" onClick={(e) => e.stopPropagation()}>
+      <button className="pmClose" onClick={() => setProfileOpen(false)} aria-label="Kapat">
+        ×
+      </button>
+
+      <div className="h2">Profil</div>
+
+      <div className="field">
+        <div className="label">Kullanıcı adı</div>
+        <input className="input" value={usernameDraft} onChange={(e) => setUsernameDraft(e.target.value)} />
+      </div>
+
+      <div className="field">
+        <div className="label">Profil fotoğrafı</div>
+        <input
+          className="file"
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+          onChange={(e) => setAvatarDraft(e.target.files?.[0] ?? null)}
+        />
+        <div className="muted small">5MB altı</div>
+      </div>
+
+      {profileErr ? <div className="err">{profileErr}</div> : null}
+
+      <div className="row" style={{ justifyContent: 'flex-end', marginTop: 12 }}>
+        <button
+          className="btn btnSm"
+          onClick={async () => {
+            await saveProfile()
+            // kaydetme başarılıysa kapat
+            setProfileOpen(false)
+          }}
+          disabled={savingProfile}
+        >
+          {savingProfile ? 'Kaydediliyor…' : 'Kaydet'}
+        </button>
+      </div>
+    </div>
+  </div>
+) : null}
 
         {lightboxUrl ? (
           <div className="lb" onClick={() => setLightboxUrl(null)} role="dialog" aria-modal="true">
@@ -921,5 +973,37 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
 textarea{
   background: rgba(0,0,0,.22) !important;
   color: var(--text) !important;
+}
+  .pm{
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0,0,0,.55);
+  backdrop-filter: blur(10px);
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+.pmInner{
+  width: min(560px, 96vw);
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,.18);
+  background: rgba(15, 5, 20, .60);
+  box-shadow: 0 30px 90px rgba(0,0,0,.55);
+  padding: 16px;
+  position: relative;
+}
+.pmClose{
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.22);
+  background: rgba(0,0,0,.35);
+  color: #fff;
+  font-size: 22px;
+  cursor: pointer;
 }
 `
