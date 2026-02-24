@@ -659,19 +659,29 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
 .brand{
   display:flex;
   align-items:center;
-  gap: 24px;
+  gap: 32px;
 }
 .logo{
-  width: 72px;
-  height: 72px;
+  width: 110px;
+  height: 110px;
   object-fit: contain;
-  padding: 10px;
-  border-radius: 18px;
-  background: rgba(255,255,255,.30);
-  border: 1px solid rgba(255,255,255,.38);
-  box-shadow: 0 18px 40px rgba(0,0,0,.35);
+
+  padding: 18px;
+  border-radius: 28px;
+
+  background: linear-gradient(145deg, rgba(255,255,255,.45), rgba(255,255,255,.18));
+  border: 1px solid rgba(255,255,255,.55);
+
+  box-shadow:
+    0 25px 60px rgba(0,0,0,.45),
+    inset 0 2px 6px rgba(255,255,255,.35);
 }
-.word{ font-weight: 500; letter-spacing: .18em; text-transform: uppercase; }
+.word{
+  font-weight: 800;
+  font-size: 26px;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+}
 .right{ display:flex; align-items:center; gap: 10px; }
 .userPill{
   display:flex; align-items:center; gap:10px;
