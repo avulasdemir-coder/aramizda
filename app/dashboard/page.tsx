@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 
 const supabase = createClient(
@@ -9,197 +9,300 @@ const supabase = createClient(
 )
 
 type Product = {
-  id: number
-  title: string
+  id: string
+  name: string
+  brand: string
   category: string
+  image_url?: string | null
 }
 
-type Experience = {
-  id: number
-  rating: number
-  pros: string
-  cons: string
-  would_buy_again: boolean
+type ReviewRow = {
+  id: string
+  user_id: string
+  rating: number | null
+  pros: string | null
+  cons: string | null
+  would_buy_again: boolean | null
   created_at: string
-  product: { title: string }
+  products?: { name: string; brand: string; category: string; image_url?: string | null }[] | null
 }
 
-export default function Dashboard() {
+type CommentRow = {
+  id: string
+  review_id: string
+  user_id: string
+  content: string
+  created_at: string
+}
+
+type ProfileRow = {
+  id: string
+  nickname: string
+}
+
+function slugify(s: string) {
+  return s
+    .trim()
+    .toLowerCase()
+    .replaceAll('ı', 'i')
+    .replaceAll('ğ', 'g')
+    .replaceAll('ü', 'u')
+    .replaceAll('ş', 's')
+    .replaceAll('ö', 'o')
+    .replaceAll('ç', 'c')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+function Stars({ value }: { value: number }) {
+  const v = Math.max(0, Math.min(5, Math.round(value)))
+  return (
+    <span className="stars">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <svg
+          key={i}
+          className="star"
+          viewBox="0 0 24 24"
+          fill={i < v ? 'rgba(255,210,90,.95)' : 'rgba(255,255,255,.25)'}
+        >
+          <path d="M12 17.3l-5.5 3 1-6.3-4.6-4.5 6.4-1 2.7-5.8 2.7 5.8 6.4 1-4.6 4.5 1 6.3z" />
+        </svg>
+      ))}
+    </span>
+  )
+}
+
+export default function DashboardPage() {
+  const [userId, setUserId] = useState<string | null>(null)
+  const [nickname, setNickname] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [msg, setMsg] = useState('')
+
+  const [nickById, setNickById] = useState<Record<string, string>>({})
+
+  const [q, setQ] = useState('')
   const [products, setProducts] = useState<Product[]>([])
-  const [experiences, setExperiences] = useState<Experience[]>([])
-  const [selectedProduct, setSelectedProduct] = useState<number | null>(null)
-  const [search, setSearch] = useState('')
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
+
+  const [latest, setLatest] = useState<ReviewRow[]>([])
+
   const [rating, setRating] = useState(5)
   const [pros, setPros] = useState('')
   const [cons, setCons] = useState('')
-  const [wba, setWba] = useState(false)
+  const [wouldBuyAgain, setWouldBuyAgain] = useState(true)
+  const [saving, setSaving] = useState(false)
 
+  // -------- AUTH (getUser kullanıyoruz) --------
   useEffect(() => {
-    loadExperiences()
+    const init = async () => {
+      try {
+        const { data, error } = await supabase.auth.getUser()
+        if (error) throw error
+
+        const u = data.user
+        if (!u) {
+          setLoading(false)
+          setMsg('Giriş yapman gerekiyor.')
+          return
+        }
+
+        setUserId(u.id)
+
+        const { data: prof } = await supabase
+          .from('profiles')
+          .select('nickname')
+          .eq('id', u.id)
+          .maybeSingle()
+
+        const nn = prof?.nickname ?? 'Kullanıcı'
+        setNickname(nn)
+        setNickById((prev) => ({ ...prev, [u.id]: nn }))
+
+        setLoading(false)
+      } catch (e: any) {
+        setMsg(e?.message ?? 'Oturum başlatılamadı.')
+        setLoading(false)
+      }
+    }
+
+    init()
   }, [])
 
-  async function loadExperiences() {
-    const { data } = await supabase
-      .from('experiences')
-      .select('*, product:products(title)')
-      .order('created_at', { ascending: false })
-
-    if (data) setExperiences(data as any)
+  const logout = async () => {
+    await supabase.auth.signOut()
+    window.location.href = '/'
   }
 
-  async function searchProducts() {
+  // -------- PRODUCT SEARCH --------
+  const runSearch = async () => {
+    const term = q.trim()
+    if (!term) return setProducts([])
+
     const { data } = await supabase
       .from('products')
-      .select('*')
-      .ilike('title', `%${search}%`)
+      .select('id,name,brand,category,image_url')
+      .or(`name.ilike.%${term}%,brand.ilike.%${term}%`)
+      .limit(30)
 
-    if (data) setProducts(data)
+    setProducts((data as Product[]) ?? [])
   }
 
-  async function addExperience() {
-    if (!selectedProduct) return
+  // -------- LOAD REVIEWS --------
+  const loadLatest = async () => {
+    const { data } = await supabase
+      .from('reviews')
+      .select(
+        `
+        id,
+        user_id,
+        rating,
+        pros,
+        cons,
+        would_buy_again,
+        created_at,
+        products(name,brand,category,image_url)
+      `
+      )
+      .order('created_at', { ascending: false })
+      .limit(10)
 
-    await supabase.from('experiences').insert({
-      product_id: selectedProduct,
+    setLatest((data as ReviewRow[]) ?? [])
+  }
+
+  useEffect(() => {
+    if (!loading && userId) loadLatest()
+  }, [loading, userId])
+
+  const saveReview = async () => {
+    if (!userId || !selectedProduct) return
+
+    setSaving(true)
+
+    await supabase.from('reviews').insert({
+      user_id: userId,
+      product_id: selectedProduct.id,
       rating,
-      pros,
-      cons,
-      would_buy_again: wba
+      pros: pros || null,
+      cons: cons || null,
+      would_buy_again: wouldBuyAgain,
     })
 
     setPros('')
     setCons('')
     setRating(5)
-    setWba(false)
-    loadExperiences()
+    setWouldBuyAgain(true)
+
+    await loadLatest()
+    setSaving(false)
+  }
+
+  if (loading) {
+    return <div style={{ padding: 40 }}>Yükleniyor…</div>
+  }
+
+  if (!userId) {
+    return (
+      <div style={{ padding: 40 }}>
+        <h2>Giriş yapman gerekiyor</h2>
+        <button onClick={() => (window.location.href = '/')}>Girişe dön</button>
+      </div>
+    )
   }
 
   return (
-    <div className="page">
-      <div className="card header">
-        <h2>Profil</h2>
-      </div>
-
-      <div className="grid">
-        <div className="card">
-          <h3>Ürün Ara</h3>
-          <input
-            placeholder="örn: elidor şampuan"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
-          <button onClick={searchProducts}>Ara</button>
-
-          {products.map(p => (
-            <div
-              key={p.id}
-              className={`product ${selectedProduct === p.id ? 'selected' : ''}`}
-              onClick={() => setSelectedProduct(p.id)}
-            >
-              {p.title}
-              <div className="muted">{p.category}</div>
-            </div>
-          ))}
-        </div>
-
-        <div className="card">
-          <h3>Deneyim Ekle</h3>
-          {!selectedProduct && (
-            <div className="muted">Önce soldan bir ürün seç.</div>
-          )}
-
-          <label>Puan</label>
-          <select value={rating} onChange={e => setRating(Number(e.target.value))}>
-            {[1,2,3,4,5].map(n => (
-              <option key={n} value={n}>{n}</option>
-            ))}
-          </select>
-
-          <label>Artılar</label>
-          <textarea value={pros} onChange={e => setPros(e.target.value)} />
-
-          <label>Eksiler</label>
-          <textarea value={cons} onChange={e => setCons(e.target.value)} />
-
-          <label>
-            <input
-              type="checkbox"
-              checked={wba}
-              onChange={e => setWba(e.target.checked)}
-            />
-            Tekrar alırım
-          </label>
-
-          <button onClick={addExperience}>Gönder</button>
+    <div style={{ padding: 40, maxWidth: 900, margin: '0 auto' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 30 }}>
+        <h1>Dashboard</h1>
+        <div>
+          <strong>{nickname}</strong>
+          <button style={{ marginLeft: 15 }} onClick={logout}>
+            Çıkış
+          </button>
         </div>
       </div>
 
-      <div className="card">
-        <h3>Son Deneyimler</h3>
-        {experiences.length === 0 && (
-          <div className="muted">Henüz deneyim yok.</div>
-        )}
+      <div style={{ marginBottom: 30 }}>
+        <h2>Ürün Ara</h2>
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="örn: elidor şampuan"
+        />
+        <button onClick={runSearch}>Ara</button>
 
-        {experiences.map(exp => (
-          <div key={exp.id} className="review">
-            <strong>{exp.product?.title}</strong>
-            <div>⭐ {exp.rating}</div>
-            <div><b>Artılar:</b> {exp.pros}</div>
-            <div><b>Eksiler:</b> {exp.cons}</div>
-            {exp.would_buy_again && <div className="muted">Tekrar alırım</div>}
+        {products.map((p) => (
+          <div key={p.id} style={{ marginTop: 10 }}>
+            <strong>{p.brand}</strong> — {p.name}
+            <button onClick={() => setSelectedProduct(p)} style={{ marginLeft: 10 }}>
+              Seç
+            </button>
           </div>
         ))}
       </div>
 
-      <style jsx>{`
-        .page {
-          min-height: 100vh;
-          background: linear-gradient(135deg,#c471f5,#fa71cd);
-          padding: 40px;
-        }
-        .grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 24px;
-          margin-bottom: 24px;
-        }
-        .card {
-          background: rgba(255,255,255,0.15);
-          backdrop-filter: blur(20px);
-          padding: 20px;
-          border-radius: 20px;
-          color: white;
-        }
-        input, textarea, select {
-          width: 100%;
-          margin-bottom: 12px;
-          padding: 8px;
-          border-radius: 8px;
-          border: none;
-        }
-        button {
-          padding: 8px 16px;
-          border-radius: 8px;
-          border: none;
-          cursor: pointer;
-        }
-        .product {
-          padding: 8px;
-          margin-bottom: 8px;
-          cursor: pointer;
-          border-radius: 8px;
-        }
-        .product.selected {
-          background: rgba(255,255,255,0.25);
-        }
-        .muted {
-          opacity: 0.7;
-          font-size: 14px;
-        }
-        .review {
-          margin-bottom: 16px;
-        }
-      `}</style>
+      <div style={{ marginBottom: 30 }}>
+        <h2>Deneyim Ekle</h2>
+        <div>
+          {selectedProduct
+            ? `${selectedProduct.brand} — ${selectedProduct.name}`
+            : 'Önce ürün seç'}
+        </div>
+
+        <select value={rating} onChange={(e) => setRating(Number(e.target.value))}>
+          {[5, 4, 3, 2, 1].map((n) => (
+            <option key={n} value={n}>
+              {n}
+            </option>
+          ))}
+        </select>
+
+        <div>
+          <textarea
+            placeholder="Artılar"
+            value={pros}
+            onChange={(e) => setPros(e.target.value)}
+          />
+        </div>
+
+        <div>
+          <textarea
+            placeholder="Eksiler"
+            value={cons}
+            onChange={(e) => setCons(e.target.value)}
+          />
+        </div>
+
+        <label>
+          <input
+            type="checkbox"
+            checked={wouldBuyAgain}
+            onChange={(e) => setWouldBuyAgain(e.target.checked)}
+          />
+          Tekrar alırım
+        </label>
+
+        <div>
+          <button onClick={saveReview} disabled={saving}>
+            {saving ? 'Kaydediliyor…' : 'Gönder'}
+          </button>
+        </div>
+      </div>
+
+      <div>
+        <h2>Son Deneyimler</h2>
+        {latest.map((r) => {
+          const prod = r.products?.[0]
+          return (
+            <div key={r.id} style={{ marginBottom: 15 }}>
+              <strong>
+                {prod?.brand} — {prod?.name}
+              </strong>
+              <div>{r.pros && <>✅ {r.pros}</>}</div>
+              <div>{r.cons && <>⚠️ {r.cons}</>}</div>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
