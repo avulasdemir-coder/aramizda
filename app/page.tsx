@@ -662,19 +662,24 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   gap: 32px;
 }
 .logo{
-  width: 110px;
-  height: 110px;
+  width: 120px;
+  height: 120px;
   object-fit: contain;
 
-  padding: 18px;
-  border-radius: 28px;
+  padding: 22px;
+  border-radius: 30px;
 
-  background: linear-gradient(145deg, rgba(255,255,255,.45), rgba(255,255,255,.18));
-  border: 1px solid rgba(255,255,255,.55);
+  background: radial-gradient(circle at center, rgba(255,255,255,.85), rgba(255,255,255,.45));
+  border: 2px solid rgba(255,255,255,.7);
 
   box-shadow:
-    0 25px 60px rgba(0,0,0,.45),
-    inset 0 2px 6px rgba(255,255,255,.35);
+    0 30px 70px rgba(0,0,0,.55),
+    inset 0 3px 10px rgba(255,255,255,.6);
+
+  filter:
+    contrast(1.35)
+    brightness(1.15)
+    drop-shadow(0 0 18px rgba(255,255,255,.6));
 }
 .word{
   font-weight: 800;
