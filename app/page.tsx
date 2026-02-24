@@ -3,10 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
 
 type Profile = {
   user_id: string
@@ -50,12 +47,8 @@ function uid() {
 function validateImage(file: File) {
   const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']
   const maxSize = 5 * 1024 * 1024 // 5MB
-  if (!allowed.includes(file.type)) {
-    throw new Error('Sadece JPG, PNG, WEBP veya HEIC/HEIF formatı yükleyebilirsin.')
-  }
-  if (file.size > maxSize) {
-    throw new Error('Fotoğraf en fazla 5MB olabilir.')
-  }
+  if (!allowed.includes(file.type)) throw new Error('Sadece JPG, PNG, WEBP veya HEIC/HEIF formatı yükleyebilirsin.')
+  if (file.size > maxSize) throw new Error('Fotoğraf en fazla 5MB olabilir.')
 }
 
 async function uploadImage(file: File, folder: string) {
@@ -74,16 +67,7 @@ async function uploadImage(file: File, folder: string) {
   return data.publicUrl
 }
 
-const CATEGORY_OPTIONS = [
-  'Cilt Bakım',
-  'Makyaj',
-  'Saç',
-  'Vücut',
-  'Parfüm',
-  'Güneş',
-  'Ağız Bakım',
-  'Diğer',
-] as const
+const CATEGORY_OPTIONS = ['Cilt Bakım', 'Makyaj', 'Saç', 'Vücut', 'Parfüm', 'Güneş', 'Ağız Bakım', 'Diğer'] as const
 
 export default function Home() {
   // auth
@@ -167,11 +151,7 @@ export default function Home() {
 
   async function loadProfile(uid: string) {
     setProfileErr(null)
-    const res = await supabase
-      .from('profiles')
-      .select('user_id,username,avatar_url,is_admin')
-      .eq('user_id', uid)
-      .maybeSingle()
+    const res = await supabase.from('profiles').select('user_id,username,avatar_url,is_admin').eq('user_id', uid).maybeSingle()
 
     if (res.error) {
       setProfile(null)
@@ -192,9 +172,7 @@ export default function Home() {
       if (uname.length < 2) throw new Error('Kullanıcı adı en az 2 karakter olmalı.')
 
       let avatar_url = profile?.avatar_url ?? null
-      if (avatarDraft) {
-        avatar_url = await uploadImage(avatarDraft, 'avatars')
-      }
+      if (avatarDraft) avatar_url = await uploadImage(avatarDraft, 'avatars')
 
       const up = await supabase
         .from('profiles')
@@ -256,24 +234,19 @@ export default function Home() {
     try {
       if (!userId) throw new Error('Giriş gerekli.')
       if (!profile?.is_admin) throw new Error('Ürün ekleme yetkin yok.')
+
       const brand = newBrand.trim()
       const name = newName.trim()
       if (!brand || !name) throw new Error('Marka ve ürün adı zorunlu.')
 
-      const category =
-        categoryChoice === 'Diğer' ? (customCategory.trim() || null) : (categoryChoice as string)
+      const category = categoryChoice === 'Diğer' ? (customCategory.trim() || null) : (categoryChoice as string)
 
       setAddingProduct(true)
 
       let image_url: string | null = null
       if (newPhoto) image_url = await uploadImage(newPhoto, 'products')
 
-      const ins = await supabase
-        .from('products')
-        .insert({ brand, name, category, image_url })
-        .select('id,brand,name,category,image_url,created_at')
-        .single()
-
+      const ins = await supabase.from('products').insert({ brand, name, category, image_url }).select('id,brand,name,category,image_url,created_at').single()
       if (ins.error) throw ins.error
 
       setAddProductMsg('Ürün eklendi.')
@@ -351,14 +324,11 @@ export default function Home() {
 
       if (error) throw error
       setRecent(((data as any[]) || []) as ExperienceRow[])
-    } catch (e) {
-      // hata mesajı istersen açarız; şimdilik sessiz
     } finally {
       setRecentLoading(false)
     }
   }
 
-  // UI
   if (!userId) {
     return (
       <div className="wrap">
@@ -436,30 +406,21 @@ export default function Home() {
           <main className="grid">
             {/* Left */}
             <section className="card tall">
-  <div className="h2">Ürün Ara</div>
+              <div className="h2">Ürün Ara</div>
 
-  <form
-    onSubmit={(e) => {
-      e.preventDefault()
-      searchProducts()
-    }}
-  >
-    <div className="row">
-      <input
-        className="input"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        placeholder="ör: bee beauty"
-      />
-      <button
-        className="btn"
-        type="submit"
-        disabled={pLoading}
-      >
-        {pLoading ? '…' : 'Ara'}
-      </button>
-    </div>
-  </form>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  searchProducts()
+                }}
+              >
+                <div className="row">
+                  <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="ör: bee beauty" />
+                  <button className="btn" type="submit" disabled={pLoading}>
+                    {pLoading ? '…' : 'Ara'}
+                  </button>
+                </div>
+              </form>
 
               {pErr ? <div className="err">{pErr}</div> : null}
               {addProductMsg ? <div className="ok">{addProductMsg}</div> : null}
@@ -695,16 +656,20 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   box-shadow: var(--shadow);
   position: sticky; top: 12px; z-index: 20;
 }
-.brand{ display:flex; align-items:center; gap: 12px; }
+.brand{
+  display:flex;
+  align-items:center;
+  gap: 24px;
+}
 .logo{
-  width: 48px;
-  height: 48px;
+  width: 72px;
+  height: 72px;
   object-fit: contain;
-  padding: 6px;
-  border-radius: 14px;
-  background: rgba(255,255,255,.18);
-  border: 1px solid rgba(255,255,255,.22);
-  box-shadow: 0 10px 30px rgba(0,0,0,.25);
+  padding: 10px;
+  border-radius: 18px;
+  background: rgba(255,255,255,.30);
+  border: 1px solid rgba(255,255,255,.38);
+  box-shadow: 0 18px 40px rgba(0,0,0,.35);
 }
 .word{ font-weight: 500; letter-spacing: .18em; text-transform: uppercase; }
 .right{ display:flex; align-items:center; gap: 10px; }
@@ -821,7 +786,6 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
 .okP{ background: rgba(70,255,160,.10); }
 .badP{ background: rgba(255,90,90,.10); }
 .rImg{ width: 100%; max-height: 220px; object-fit: cover; border-radius: 14px; border:1px solid rgba(255,255,255,.18); margin-top: 10px; }
-
 .foot{ text-align:center; padding: 6px 0; }
 
 /* Lightbox */
