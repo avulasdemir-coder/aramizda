@@ -591,10 +591,11 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   cursor:pointer;
   padding: 10px 14px;
   border-radius: 14px;
-  background: linear-gradient(135deg, #ffffff, #f2e8ff);
-  color: #3b0066;
+  background: rgba(0,0,0,.35);
+  color: #ffffff;
   font-weight: 900;
-  box-shadow: 0 8px 24px rgba(0,0,0,.25);
+  letter-spacing: .4px;
+  text-shadow: 0 1px 2px rgba(0,0,0,.6);
 }
 .btn.ghost{
   background: rgba(255,255,255,.08);
