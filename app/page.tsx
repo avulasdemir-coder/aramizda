@@ -696,7 +696,7 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   position: sticky; top: 12px; z-index: 20;
 }
 .brand{ display:flex; align-items:center; gap: 12px; }
-..logo{
+.logo{
   width: 48px;
   height: 48px;
   object-fit: contain;
