@@ -647,14 +647,18 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
 .app{ max-width: 1180px; margin:0 auto; display:flex; flex-direction:column; gap: 14px; }
 
 .topbar{
-  display:flex; align-items:center; justify-content:space-between;
-  padding: 10px 14px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+
+  padding: 12px 20px;
+  min-height: 96px;     /* logo büyük olduğu için denge */
+
   border-radius: var(--r);
   border:1px solid var(--stroke);
   background: linear-gradient(180deg, var(--glass2), var(--glass));
   backdrop-filter: blur(18px);
   box-shadow: var(--shadow);
-  position: sticky; top: 12px; z-index: 20;
 }
 .brand{
   display:flex;
@@ -662,14 +666,20 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   gap: 18px;
 }
 .logo{
-  width: 128px;
-  height: 128px;
-  object-fit: contain;
-  padding: 4px;               /* padding neredeyse sıfır */
-  border-radius: 26px;
-  background: rgba(255,255,255,.18);
-  border: 1px solid rgba(255,255,255,.30);
-  box-shadow: 0 20px 55px rgba(0,0,0,.42);
+  width: 118px;
+  height: 118px;
+
+  padding: 2px;                 /* neredeyse sıfır */
+  object-fit: cover;            /* iç görsel daha dolu */
+
+  border-radius: 28px;
+
+  background: #0e0e14;          /* eski siyah premium zemin geri */
+  border: 1px solid rgba(255,255,255,.18);
+
+  box-shadow:
+    0 30px 70px rgba(0,0,0,.55),
+    inset 0 0 0 1px rgba(255,255,255,.06);
 }
 .word{
   font-weight: 900;
@@ -680,16 +690,45 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
 
 .right{
   display:flex;
-  align-items:center;         /* hizalama */
-  gap: 12px;
+  align-items:center;
+  gap: 16px;
 }
 .userPill{
-  display:flex; align-items:center; gap:10px;
-  padding: 8px 12px;
-  height: 44px;
-  border-radius: 999px;
-  border:1px solid var(--stroke);
-  background: rgba(0,0,0,.18);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  height: 46px;
+  padding: 0 16px;
+}
+.btn{
+  appearance:none;
+  border:1px solid rgba(255,255,255,.28);
+  cursor:pointer;
+  padding: 12px 18px;
+  border-radius: 16px;
+
+  background: linear-gradient(
+    145deg,
+    rgba(0,0,0,.55),
+    rgba(0,0,0,.35)
+  );
+
+  color: #ffffff;
+  font-weight: 900;
+  letter-spacing: .6px;
+
+  box-shadow:
+    0 12px 30px rgba(0,0,0,.45),
+    inset 0 1px 0 rgba(255,255,255,.06);
+
+  transition: all .2s ease;
+}
+
+.btn:hover{
+  transform: translateY(-2px);
+  box-shadow:
+    0 18px 40px rgba(0,0,0,.55),
+    inset 0 1px 0 rgba(255,255,255,.08);
 }
 .av{ width: 28px; height: 28px; border-radius: 999px; object-fit: cover; border:1px solid rgba(255,255,255,.22); }
 .av.ph{ background: rgba(255,255,255,.14); }
@@ -877,5 +916,9 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   .list,.recent{ max-height: 280px; }
   .logo{ width: 96px; height: 96px; }
   .word{ font-size: 22px; }
+}
+textarea{
+  background: rgba(0,0,0,.22) !important;
+  color: var(--text) !important;
 }
 `
