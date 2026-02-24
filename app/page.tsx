@@ -47,7 +47,42 @@ function safeExt(fileName: string) {
 function uid() {
   return Math.random().toString(16).slice(2) + Date.now().toString(16)
 }
+function validateImage(file: File) {
+  const allowed = [
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'image/heic',
+    'image/heif',
+  ]
+  const maxSize = 5 * 1024 * 1024 // 5MB
 
+  if (!allowed.includes(file.type)) {
+    throw new Error('Sadece JPG, PNG, WEBP veya HEIC/HEIF formatı yükleyebilirsin.')
+  }
+  if (file.size > maxSize) {
+    throw new Error('Fotoğraf en fazla 5MB olabilir.')
+  }
+}
+function validateImage(file: File) {
+  const allowed = [
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'image/heic',
+    'image/heif'
+  ]
+  const maxSize = 5 * 1024 * 1024 // 5MB
+
+  if (!allowed.includes(file.type)) {
+    throw new Error('Sadece JPG, PNG, WEBP veya HEIC/HEIF formatı yükleyebilirsin.')
+  }
+
+  if (file.size > maxSize) {
+    throw new Error('Fotoğraf en fazla 5MB olabilir.')
+  }
+}
+  validateImage(file)
 async function uploadImage(file: File, folder: string) {
   const ext = safeExt(file.name)
   const path = `${folder}/${uid()}.${ext}`
