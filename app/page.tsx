@@ -671,12 +671,12 @@ export default function Home() {
 
                         {r.pros ? (
                           <div className="pill okP">
-                            <strong>Artılar</strong> (+)&nbsp;{r.pros}
+                            <strong>Artılar :</strong> {r.pros}
                           </div>
                         ) : null}
                         {r.cons ? (
                           <div className="pill badP">
-                            <strong>Eksiler</strong> (-)&nbsp;{r.cons}
+                            <strong>Eksiler :</strong> {r.cons}
                           </div>
                         ) : null}
 
@@ -712,18 +712,32 @@ export default function Home() {
                         <div className="badge">{typeof r.rating === 'number' ? `${r.rating}/5` : '-'}</div>
                       </div>
 
-                      <div className="muted small">{r.product ? `${r.product.brand} — ${r.product.name}` : 'Ürün'}</div>
+                      {r.product ? (
+  <button
+    type="button"
+    className="prodLink"
+    onClick={() => {
+      setSelected(r.product as Product)
+      // istersen ürün ekle kartına kaydırsın:
+      // document.getElementById('add-product')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }}
+  >
+    {r.product.brand} — {r.product.name}
+  </button>
+) : (
+  <div className="muted small">Ürün</div>
+)}
 
                       {r.pros ? (
-                        <div className="pill okP">
-                          <strong>Artılar</strong> (+)&nbsp;{r.pros}
-                        </div>
-                      ) : null}
+  <div className="pill okP">
+    <strong>Artılar :</strong> {r.pros}
+  </div>
+) : null}
                       {r.cons ? (
-                        <div className="pill badP">
-                          <strong>Eksiler</strong> (-)&nbsp;{r.cons}
-                        </div>
-                      ) : null}
+  <div className="pill badP">
+    <strong>Eksiler :</strong> {r.cons}
+  </div>
+) : null}
 
                       {r.image_url ? (
                         <img
@@ -918,6 +932,20 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
 .muted{ color: var(--muted); }
 .small{ font-size: 12px; }
 
+.prodLink{
+  appearance:none;
+  border:0;
+  padding:0;
+  margin:0;
+  background: transparent;
+  color: rgba(255,255,255,.85);
+  font-weight: 900;
+  text-align:left;
+  cursor:pointer;
+}
+.prodLink:hover{
+  text-decoration: underline;
+}
 .grid{
   display:grid;
   grid-template-columns: 1fr 1fr 1fr;
