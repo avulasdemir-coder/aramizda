@@ -719,8 +719,8 @@ export default function Home() {
                           <div className="badge">{typeof r.rating === 'number' ? `${r.rating}/5` : '-'}</div>
                         </div>
 
-                        {r.pros ? <div className="pill okP">+ {r.pros}</div> : null}
-                        {r.cons ? <div className="pill badP">- {r.cons}</div> : null}
+                        {r.pros ? <div className="pill okP">(+)&nbsp;{r.pros}</div> : null}
+{r.cons ? <div className="pill badP">(-)&nbsp;{r.cons}</div> : null}
 
                         {r.image_url ? (
                           <img
