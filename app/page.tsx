@@ -357,8 +357,11 @@ export default function Home() {
       await loadRecent()
       await loadProductReviews(selected.id)
     } catch (e: any) {
-      setExpMsg(e?.message ?? 'Deneyim eklenemedi')
-    } finally {
+  console.error('loadRecent error:', e)
+  // ekranda da görelim diye:
+  setPErr(e?.message ?? 'Son deneyimler yüklenemedi')
+  setRecent([])
+} finally {
       setAddingExp(false)
     }
   }
@@ -367,22 +370,20 @@ export default function Home() {
     setRecentLoading(true)
     try {
       const { data, error } = await supabase
-        .from('experiences')
-        .select(
-          `
-          id,user_id,product_id,rating,pros,cons,would_buy_again,image_url,created_at,
-          product:products!experiences_product_id_fkey(id,brand,name,category,image_url,created_at),
-          author:profiles!experiences_user_id_fkey(username,avatar_url)
-        `
-        )
-        .order('created_at', { ascending: false })
-        .limit(12)
+  .from('experiences')
+  .select(`
+    id,user_id,product_id,rating,pros,cons,would_buy_again,image_url,created_at,
+    product:products(id,brand,name,category,image_url,created_at),
+    author:profiles(username,avatar_url)
+  `)
+  .order('created_at', { ascending: false })
+  .limit(50)
 
       if (error) throw error
       setRecent(((data as any[]) || []) as ExperienceRow[])
-    } catch {
-      // sessiz
-    } finally {
+    } catch (e: any) {
+  console.error('loadRecent error:', e)
+} finally {
       setRecentLoading(false)
     }
   }
