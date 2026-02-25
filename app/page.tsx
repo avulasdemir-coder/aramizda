@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
@@ -75,19 +75,6 @@ async function uploadImage(file: File, folder: string) {
 
 const CATEGORY_OPTIONS = ['Cilt Bakım', 'Makyaj', 'Saç', 'Vücut', 'Parfüm', 'Güneş', 'Ağız Bakım', 'Diğer'] as const
 
-function clamp01(n: number) {
-  return Math.max(0, Math.min(1, n))
-}
-
-function titleCaseTr(s: string) {
-  // basit: her kelimenin ilk harfi büyük
-  return s
-    .split(' ')
-    .filter(Boolean)
-    .map((w) => w.slice(0, 1).toUpperCase() + w.slice(1))
-    .join(' ')
-}
-
 export default function Home() {
   // auth
   const [userId, setUserId] = useState<string | null>(null)
@@ -106,12 +93,12 @@ export default function Home() {
   const [pLoading, setPLoading] = useState(false)
   const [pErr, setPErr] = useState<string | null>(null)
 
-  // product stats (for current search list)
+  // product stats
   const [stats, setStats] = useState<Record<string, ProductStats>>({})
 
   // add product
-  const [brandChoice, setBrandChoice] = useState<string>('') // dropdown selection
-  const [brandCustom, setBrandCustom] = useState<string>('') // shown if "NEW"
+  const [brandChoice, setBrandChoice] = useState<string>('') // dropdown
+  const [brandCustom, setBrandCustom] = useState<string>('') // if NEW
   const [newName, setNewName] = useState('')
   const [categoryChoice, setCategoryChoice] = useState<(typeof CATEGORY_OPTIONS)[number] | ''>('')
   const [customCategory, setCustomCategory] = useState('')
@@ -119,11 +106,12 @@ export default function Home() {
   const [addingProduct, setAddingProduct] = useState(false)
   const [addProductMsg, setAddProductMsg] = useState<string | null>(null)
 
-  // add experience
+  // add/edit experience
+  const [editingExpId, setEditingExpId] = useState<string | null>(null)
   const [ratingStr, setRatingStr] = useState<string>('') // empty by default
   const [pros, setPros] = useState('')
   const [cons, setCons] = useState('')
-  const [wba, setWba] = useState<boolean | null>(null) // null => boş bırakılırsa ✖ Tekrar Almam
+  const [wba, setWba] = useState<boolean>(false) // boş bırakılırsa ✖ Tekrar Almam
   const [expPhoto, setExpPhoto] = useState<File | null>(null)
   const [addingExp, setAddingExp] = useState(false)
   const [expMsg, setExpMsg] = useState<string | null>(null)
@@ -136,18 +124,17 @@ export default function Home() {
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [lightboxAlt, setLightboxAlt] = useState<string>('Fotoğraf')
 
-  // product reviews modal
+  // reviews modal
   const [reviewsOpen, setReviewsOpen] = useState(false)
   const [reviewsProduct, setReviewsProduct] = useState<Product | null>(null)
   const [reviews, setReviews] = useState<ExperienceRow[]>([])
   const [reviewsLoading, setReviewsLoading] = useState(false)
   const [expandedReviewIds, setExpandedReviewIds] = useState<Record<string, boolean>>({})
 
-  // user profile modal (from clicking username)
+  // user modal
   const [userModalOpen, setUserModalOpen] = useState(false)
   const [userModalTitle, setUserModalTitle] = useState<string>('Kullanıcı')
   const [userModalAvatar, setUserModalAvatar] = useState<string | null>(null)
-  const [userModalUserId, setUserModalUserId] = useState<string | null>(null)
   const [userExperiences, setUserExperiences] = useState<ExperienceRow[]>([])
   const [userExperiencesLoading, setUserExperiencesLoading] = useState(false)
 
@@ -159,7 +146,6 @@ export default function Home() {
   const brandOptions = useMemo(() => {
     const set = new Set<string>()
     for (const p of products) set.add(p.brand)
-    // ayrıca DB’den markaları toplayalım: (minimum)
     return Array.from(set).sort((a, b) => a.localeCompare(b, 'tr'))
   }, [products])
 
@@ -190,6 +176,8 @@ export default function Home() {
       setRecent([])
       setReviews([])
       setReviewsOpen(false)
+      setEditingExpId(null)
+      setExpMsg(null)
 
       if (uid) {
         loadProfile(uid)
@@ -262,12 +250,12 @@ export default function Home() {
     setAddProductMsg(null)
   }
 
-  async function searchProducts() {
+  async function searchProducts(termOverride?: string) {
     setPErr(null)
     setAddProductMsg(null)
     setPLoading(true)
     try {
-      const term = q.trim()
+      const term = (typeof termOverride === 'string' ? termOverride : q).trim()
       if (!term) {
         resetSearchState()
         return
@@ -284,7 +272,6 @@ export default function Home() {
       const list = (data as Product[]) ?? []
       setProducts(list)
 
-      // stats
       await loadStatsForProducts(list.map((p) => p.id))
     } catch (e: any) {
       setPErr(e?.message ?? 'Ürün araması başarısız')
@@ -299,7 +286,6 @@ export default function Home() {
       return
     }
 
-    // deneyimleri çek, JS’de hesapla
     const { data, error } = await supabase
       .from('experiences')
       .select('product_id,rating,would_buy_again')
@@ -307,7 +293,6 @@ export default function Home() {
       .limit(5000)
 
     if (error) {
-      // stats olmadan devam
       setStats({})
       return
     }
@@ -349,30 +334,19 @@ export default function Home() {
     try {
       if (!userId) throw new Error('Giriş gerekli')
 
-      // brand
-      const brand =
-        brandChoice === '__NEW__'
-          ? brandCustom.trim()
-          : brandChoice.trim()
-
-      // category
+      const brand = brandChoice === '__NEW__' ? brandCustom.trim() : brandChoice.trim()
       const category =
-        categoryChoice === 'Diğer' ? (customCategory.trim() || null) : (categoryChoice ? String(categoryChoice) : null)
-
+        categoryChoice === 'Diğer' ? (customCategory.trim() || null) : categoryChoice ? String(categoryChoice) : null
       const name = newName.trim()
 
       const missing: string[] = []
       if (!brand) missing.push('Marka')
       if (!name) missing.push('Ürün Adı')
       if (!category) missing.push('Kategori')
-
-      if (missing.length) {
-        throw new Error(`${missing.join(', ')} zorunlu`)
-      }
+      if (missing.length) throw new Error(`${missing.join(', ')} zorunlu`)
 
       setAddingProduct(true)
 
-      // duplicate name (case-insensitive)
       const dup = await supabase.from('products').select('id').ilike('name', name).limit(1)
       if (dup.error) throw dup.error
       if (dup.data && dup.data.length > 0) throw new Error('Bu ürün zaten ekli')
@@ -396,9 +370,8 @@ export default function Home() {
       setCustomCategory('')
       setNewPhoto(null)
 
-      // aramada bir şey varsa tekrar çek
       setSelected(ins.data as Product)
-      if (q.trim()) await searchProducts()
+      if (q.trim()) await searchProducts(q.trim())
     } catch (e: any) {
       const msg = (e?.message ?? 'Ürün eklenemedi') as string
       setPErr(msg.toLowerCase().includes('duplicate') ? 'Bu ürün zaten ekli' : msg)
@@ -407,7 +380,47 @@ export default function Home() {
     }
   }
 
-  // --- add experience
+  // --- add/edit experience
+  function startEditExperience(r: ExperienceRow) {
+    if (!selected || selected.id !== r.product_id) {
+      if (r.product) setSelected(r.product)
+    }
+    setEditingExpId(r.id)
+    setRatingStr(typeof r.rating === 'number' ? String(r.rating) : '')
+    setPros(r.pros ?? '')
+    setCons(r.cons ?? '')
+    setWba(r.would_buy_again === true)
+    setExpPhoto(null)
+    setExpMsg('Düzenleme modundasın. Kaydedince güncellenecek.')
+  }
+
+  function cancelEditExperience() {
+    setEditingExpId(null)
+    setRatingStr('')
+    setPros('')
+    setCons('')
+    setWba(false)
+    setExpPhoto(null)
+    setExpMsg(null)
+  }
+
+  async function deleteExperience(expId: string) {
+    if (!userId) return
+    const ok = confirm('Bu yorumu silmek istiyor musun?')
+    if (!ok) return
+
+    const del = await supabase.from('experiences').delete().eq('id', expId).eq('user_id', userId)
+    if (del.error) {
+      alert(del.error.message)
+      return
+    }
+
+    // refresh
+    await loadRecent()
+    if (q.trim()) await searchProducts(q.trim())
+    if (reviewsOpen && reviewsProduct?.id) await loadReviews(reviewsProduct.id)
+  }
+
   async function addExperience() {
     setExpMsg(null)
     try {
@@ -423,32 +436,52 @@ export default function Home() {
       let image_url: string | null = null
       if (expPhoto) image_url = await uploadImage(expPhoto, 'experiences')
 
-      const ins = await supabase
-        .from('experiences')
-        .insert({
-          user_id: userId,
-          product_id: selected.id,
-          rating: r10,
-          pros: pros.trim() || null,
-          cons: cons.trim() || null,
-          would_buy_again: wba === true ? true : false, // boş bırakılırsa false
-          image_url,
-        })
-        .select('id')
-        .single()
+      if (editingExpId) {
+        const up = await supabase
+          .from('experiences')
+          .update({
+            rating: r10,
+            pros: pros.trim() || null,
+            cons: cons.trim() || null,
+            would_buy_again: wba === true,
+            image_url: image_url ?? undefined, // yeni foto seçmediyse dokunma
+          })
+          .eq('id', editingExpId)
+          .eq('user_id', userId)
+          .select('id')
+          .single()
 
-      if (ins.error) throw ins.error
+        if (up.error) throw up.error
+        setExpMsg('Deneyim güncellendi')
+      } else {
+        const ins = await supabase
+          .from('experiences')
+          .insert({
+            user_id: userId,
+            product_id: selected.id,
+            rating: r10,
+            pros: pros.trim() || null,
+            cons: cons.trim() || null,
+            would_buy_again: wba === true,
+            image_url,
+          })
+          .select('id')
+          .single()
 
+        if (ins.error) throw ins.error
+        setExpMsg('Deneyim eklendi')
+      }
+
+      // reset form
       setPros('')
       setCons('')
       setRatingStr('')
-      setWba(null)
+      setWba(false)
       setExpPhoto(null)
-      setExpMsg('Deneyim eklendi')
+      setEditingExpId(null)
 
       await loadRecent()
-      if (q.trim()) await searchProducts()
-      // reviews modal açıksa güncelle
+      if (q.trim()) await searchProducts(q.trim())
       if (reviewsOpen && reviewsProduct?.id) await loadReviews(reviewsProduct.id)
     } catch (e: any) {
       setExpMsg(e?.message ?? 'Deneyim eklenemedi')
@@ -512,8 +545,7 @@ export default function Home() {
   }
 
   // --- user modal
-  async function openUserModal(userId: string, username: string, avatarUrl: string | null) {
-    setUserModalUserId(userId)
+  async function openUserModal(uid: string, username: string, avatarUrl: string | null) {
     setUserModalTitle(username || 'Kullanıcı')
     setUserModalAvatar(avatarUrl)
     setUserModalOpen(true)
@@ -527,7 +559,7 @@ export default function Home() {
           product:products(id,brand,name,category,image_url,created_at),
           author:profiles(username,avatar_url)
         `)
-        .eq('user_id', userId)
+        .eq('user_id', uid)
         .order('created_at', { ascending: false })
         .limit(200)
 
@@ -638,9 +670,7 @@ export default function Home() {
                     onChange={(e) => {
                       const v = e.target.value
                       setQ(v)
-                      if (!v.trim()) {
-                        resetSearchState()
-                      }
+                      if (!v.trim()) resetSearchState()
                     }}
                     placeholder="ör: bee beauty"
                   />
@@ -680,10 +710,15 @@ export default function Home() {
                     const wbaPct = st?.wbaPct
 
                     return (
-                      <button
+                      <div
                         key={p.id}
                         className={`item ${selected?.id === p.id ? 'active' : ''}`}
+                        role="button"
+                        tabIndex={0}
                         onClick={() => setSelected(p)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') setSelected(p)
+                        }}
                       >
                         {p.image_url ? (
                           <img
@@ -724,7 +759,7 @@ export default function Home() {
                             <span>{p.category || 'Kategori yok'}</span>
                           </div>
                         </div>
-                      </button>
+                      </div>
                     )
                   })
                 )}
@@ -740,7 +775,7 @@ export default function Home() {
                 <div className="label b">Puan</div>
                 <select className="input" value={ratingStr} onChange={(e) => setRatingStr(e.target.value)}>
                   <option value="">Seç</option>
-                  {[1,2,3,4,5,6,7,8,9,10].map((n) => (
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
                     <option key={n} value={String(n)}>
                       {n}
                     </option>
@@ -766,7 +801,7 @@ export default function Home() {
                     <span>✔ Tekrar Alırım</span>
                   </label>
                   <label className="radio">
-                    <input type="radio" name="wba" checked={wba !== true} onChange={() => setWba(false)} />
+                    <input type="radio" name="wba" checked={wba === false} onChange={() => setWba(false)} />
                     <span>✖ Tekrar Almam</span>
                   </label>
                 </div>
@@ -778,11 +813,19 @@ export default function Home() {
                 <div className="muted small">5 MB Altı</div>
               </div>
 
-              {expMsg ? <div className={expMsg.includes('eklendi') ? 'ok' : 'err'}>{expMsg}</div> : null}
+              {expMsg ? <div className={expMsg.includes('eklendi') || expMsg.includes('güncellendi') ? 'ok' : 'err'}>{expMsg}</div> : null}
 
-              <button className="btn btnSm boldBtn" disabled={!selected || addingExp} onClick={addExperience}>
-                {addingExp ? 'Gönderiliyor…' : 'Gönder'}
-              </button>
+              <div className="row" style={{ marginTop: 10, marginBottom: 0 }}>
+                <button className="btn btnSm boldBtn" disabled={!selected || addingExp} onClick={addExperience}>
+                  {addingExp ? (editingExpId ? 'Güncelleniyor…' : 'Gönderiliyor…') : editingExpId ? 'Güncelle' : 'Gönder'}
+                </button>
+
+                {editingExpId ? (
+                  <button className="btn ghost btnSm" type="button" onClick={cancelEditExperience} disabled={addingExp}>
+                    Vazgeç
+                  </button>
+                ) : null}
+              </div>
             </section>
 
             {/* 3) Son Deneyimler */}
@@ -797,29 +840,34 @@ export default function Home() {
                 <div className="recent">
                   {recent.map((r) => {
                     const r10 = typeof r.rating === 'number' ? r.rating : null
-                    const badge =
-                      r.would_buy_again === true ? (
-                        <span className="wbaBadge">✔ Tekrar Alırım</span>
-                      ) : (
-                        <span className="wbaBadge no">✖ Tekrar Almam</span>
-                      )
+                    const badgeText = r.would_buy_again === true ? '✔ Tekrar Alırım' : '✖ Tekrar Almam'
 
                     return (
                       <div
                         key={r.id}
                         className="r clickableCard"
+                        role="button"
+                        tabIndex={0}
                         onClick={() => {
-                          if (r.product) {
+                          if (!r.product) return
+                          const term = `${r.product.brand} ${r.product.name}`
+                          setQ(term)
+                          setSelected(r.product)
+                          // sonuçlar da gelsin
+                          setTimeout(() => {
+                            searchProducts(term)
+                          }, 0)
+                        }}
+                        onKeyDown={(e) => {
+                          if ((e.key === 'Enter' || e.key === ' ') && r.product) {
+                            const term = `${r.product.brand} ${r.product.name}`
+                            setQ(term)
                             setSelected(r.product)
-                            setQ(`${r.product.brand} ${r.product.name}`)
-                            // arama sonuçlarının da gelmesi için
                             setTimeout(() => {
-                              searchProducts().then(() => setSelected(r.product as Product))
+                              searchProducts(term)
                             }, 0)
                           }
                         }}
-                        role="button"
-                        tabIndex={0}
                       >
                         <div className="rHead">
                           <button
@@ -838,11 +886,16 @@ export default function Home() {
 
                           <div className="rRight">
                             <div className="badge">{r10 !== null ? `${r10}/10` : '—'}</div>
-                            {badge}
+                            <div className={`wbaBadge ${r.would_buy_again === true ? '' : 'no'}`}>{badgeText}</div>
                           </div>
                         </div>
 
-                        {r.product ? <div className="muted small pLine">{r.product.brand} — {r.product.name}</div> : null}
+                        {r.product ? (
+                          <div className="muted small pLine">
+                            {r.product.brand} — {r.product.name}
+                            {r.product.category ? ` • ${r.product.category}` : ''}
+                          </div>
+                        ) : null}
 
                         {r.pros ? (
                           <div className="pill okP">
@@ -980,16 +1033,35 @@ export default function Home() {
 
         {/* Reviews modal */}
         {reviewsOpen ? (
-          <div className="rm" onClick={() => setReviewsOpen(false)} role="dialog" aria-modal="true">
+          <div
+            className="rm"
+            onClick={() => {
+              setReviewsOpen(false)
+              setExpandedReviewIds({})
+            }}
+            role="dialog"
+            aria-modal="true"
+          >
             <div className="rmInner" onClick={(e) => e.stopPropagation()}>
-              <button className="rmClose" onClick={() => setReviewsOpen(false)} aria-label="Kapat">
+              <button
+                className="rmClose"
+                onClick={() => {
+                  setReviewsOpen(false)
+                  setExpandedReviewIds({})
+                }}
+                aria-label="Kapat"
+              >
                 ×
               </button>
 
               <div className="rmTitle">
-                <div className="h2" style={{ marginBottom: 6 }}>Yorumlar</div>
-                <div className="muted small">
-                  {reviewsProduct ? `${reviewsProduct.brand} — ${reviewsProduct.name}` : ''}
+                <div className="h2" style={{ marginBottom: 6 }}>
+                  Yorumlar
+                </div>
+                <div className="rmSubtitle">
+                  {reviewsProduct
+                    ? `${reviewsProduct.brand} — ${reviewsProduct.name}${reviewsProduct.category ? ` • ${reviewsProduct.category}` : ''}`
+                    : ''}
                 </div>
               </div>
 
@@ -1008,6 +1080,7 @@ export default function Home() {
 
                     const r10 = typeof r.rating === 'number' ? r.rating : null
                     const badge = r.would_buy_again === true ? '✔ Tekrar Alırım' : '✖ Tekrar Almam'
+                    const isMine = !!userId && r.user_id === userId
 
                     return (
                       <div
@@ -1020,7 +1093,7 @@ export default function Home() {
                         <div className="rmRow1">
                           <button
                             type="button"
-                            className="userLink"
+                            className="userLink rmUserLink"
                             onClick={(e) => {
                               e.stopPropagation()
                               const u = r.author?.username || 'Kullanıcı'
@@ -1035,11 +1108,30 @@ export default function Home() {
                           <div className="rmRight">
                             <span className="badge">{r10 !== null ? `${r10}/10` : '—'}</span>
                             <span className={`wbaBadge ${r.would_buy_again === true ? '' : 'no'}`}>{badge}</span>
+
+                            {isMine ? (
+                              <span className="rmActions" onClick={(e) => e.stopPropagation()}>
+                                <button
+                                  type="button"
+                                  className="miniBtn"
+                                  onClick={() => {
+                                    if (reviewsProduct) setSelected(reviewsProduct)
+                                    startEditExperience(r)
+                                    setReviewsOpen(false)
+                                  }}
+                                >
+                                  Düzenle
+                                </button>
+                                <button type="button" className="miniBtn danger" onClick={() => deleteExperience(r.id)}>
+                                  Sil
+                                </button>
+                              </span>
+                            ) : null}
                           </div>
                         </div>
 
                         <div className={`rmText ${expanded ? 'open' : ''}`}>{txt || ' '}</div>
-                        <div className="muted small">{new Date(r.created_at).toLocaleString('tr-TR')}</div>
+                        <div className="rmDate">{new Date(r.created_at).toLocaleString('tr-TR')}</div>
                       </div>
                     )
                   })}
@@ -1060,8 +1152,10 @@ export default function Home() {
               <div className="umHead">
                 {userModalAvatar ? <img className="umAv" src={userModalAvatar} alt="" /> : <div className="umAv ph" />}
                 <div>
-                  <div className="h2" style={{ marginBottom: 4 }}>{userModalTitle}</div>
-                  <div className="muted small">Yaptığı Yorumlar</div>
+                  <div className="h2" style={{ marginBottom: 4 }}>
+                    {userModalTitle}
+                  </div>
+                  <div className="umSub">Yaptığı Yorumlar</div>
                 </div>
               </div>
 
@@ -1075,12 +1169,15 @@ export default function Home() {
                       <div key={r.id} className="umCard">
                         <div className="umTop">
                           <div className="badge">{r10 !== null ? `${r10}/10` : '—'}</div>
-                          <div className={`wbaBadge ${r.would_buy_again === true ? '' : 'no'}`}>
-                            {r.would_buy_again === true ? '✔ Tekrar Alırım' : '✖ Tekrar Almam'}
-                          </div>
+                          <div className={`wbaBadge ${r.would_buy_again === true ? '' : 'no'}`}>{r.would_buy_again === true ? '✔ Tekrar Alırım' : '✖ Tekrar Almam'}</div>
                         </div>
 
-                        {r.product ? <div className="t">{r.product.brand} — {r.product.name}</div> : null}
+                        {r.product ? (
+                          <div className="t" style={{ marginBottom: 8 }}>
+                            {r.product.brand} — {r.product.name}
+                            {r.product.category ? ` • ${r.product.category}` : ''}
+                          </div>
+                        ) : null}
 
                         {r.pros ? (
                           <div className="pill okP">
@@ -1093,7 +1190,7 @@ export default function Home() {
                           </div>
                         ) : null}
 
-                        <div className="muted small">{new Date(r.created_at).toLocaleString('tr-TR')}</div>
+                        <div className="umDate">{new Date(r.created_at).toLocaleString('tr-TR')}</div>
                       </div>
                     )
                   })}
@@ -1204,7 +1301,6 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
 .btn:disabled{ opacity:.6; cursor:not-allowed; transform:none; }
 .btnSm{ height: 46px; display:inline-flex; align-items:center; justify-content:center; padding: 0 18px; }
 .btnXs{ height: 38px; padding: 0 14px; border-radius: 14px; font-weight: 900; }
-
 .boldBtn{ font-weight: 900; }
 
 .card{
@@ -1399,7 +1495,7 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
 /* Reviews Modal (pembe üstü beyaz) */
 .rm{
   position: fixed; inset: 0; z-index: 9999;
-  background: rgba(192, 58, 159, .25);
+  background: rgba(192, 58, 159, .22);
   backdrop-filter: blur(10px);
   display: grid; place-items: center; padding: 18px;
 }
@@ -1408,7 +1504,7 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   max-height: 90vh;
   border-radius: 22px;
   border: 1px solid rgba(255,255,255,.25);
-  background: rgba(255,255,255,.92);
+  background: rgba(255,255,255,.94);
   box-shadow: 0 30px 90px rgba(0,0,0,.35);
   padding: 16px;
   position: relative;
@@ -1426,6 +1522,7 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   cursor: pointer;
 }
 .rmTitle{ margin-bottom: 12px; }
+.rmSubtitle{ font-size: 12px; font-weight: 900; color: #111; }
 .rmList{ max-height: calc(90vh - 120px); overflow:auto; display:flex; flex-direction:column; gap: 10px; padding-right: 4px; }
 .rmCard{
   border-radius: 18px;
@@ -1435,8 +1532,8 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   cursor:pointer;
 }
 .rmRow1{ display:flex; align-items:center; justify-content:space-between; gap: 10px; margin-bottom: 8px; }
-.rmUser{ font-weight: 900; }
-.rmRight{ display:flex; align-items:center; gap: 10px; }
+.rmUser{ font-weight: 900; color:#111; }
+.rmRight{ display:flex; align-items:center; gap: 10px; flex-wrap:wrap; justify-content:flex-end; }
 .rmText{
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -1444,9 +1541,29 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   overflow: hidden;
   line-height: 1.35;
   margin-bottom: 6px;
+  color:#111;
 }
-.rmText.open{
-  -webkit-line-clamp: unset;
+.rmText.open{ -webkit-line-clamp: unset; }
+.rmDate{ font-size: 12px; color: rgba(0,0,0,.60); }
+.rmUserLink{ color:#111 !important; }
+.rmInner .badge{ color:#111; border-color: rgba(0,0,0,.14); background: rgba(0,0,0,.06); }
+.rmInner .wbaBadge{ color:#111; border-color: rgba(0,0,0,.12); background: rgba(0,0,0,.06); }
+.rmInner .wbaBadge.no{ background: rgba(255,90,90,.10); border-color: rgba(255,120,120,.24); }
+
+.rmActions{ display:inline-flex; gap:8px; }
+.miniBtn{
+  appearance:none;
+  border:1px solid rgba(0,0,0,.14);
+  background: rgba(0,0,0,.04);
+  border-radius: 12px;
+  padding: 8px 10px;
+  font-weight: 900;
+  cursor:pointer;
+  color:#111;
+}
+.miniBtn.danger{
+  background: rgba(255,90,90,.10);
+  border-color: rgba(255,120,120,.26);
 }
 
 /* User Modal */
@@ -1461,7 +1578,7 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   max-height: 90vh;
   border-radius: 22px;
   border: 1px solid rgba(255,255,255,.25);
-  background: rgba(255,255,255,.92);
+  background: rgba(255,255,255,.94);
   box-shadow: 0 30px 90px rgba(0,0,0,.35);
   padding: 16px;
   position: relative;
@@ -1481,6 +1598,7 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
 .umHead{ display:flex; align-items:center; gap: 12px; margin-bottom: 12px; }
 .umAv{ width: 44px; height: 44px; border-radius: 999px; object-fit: cover; border: 1px solid rgba(0,0,0,.12); background: rgba(0,0,0,.06); }
 .umAv.ph{ background: rgba(0,0,0,.06); }
+.umSub{ font-size:12px; font-weight:900; color: rgba(0,0,0,.60); }
 .umList{ max-height: calc(90vh - 120px); overflow:auto; display:flex; flex-direction:column; gap: 10px; padding-right: 4px; }
 .umCard{
   border-radius: 18px;
@@ -1489,6 +1607,13 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   padding: 12px;
 }
 .umTop{ display:flex; align-items:center; gap:10px; margin-bottom: 8px; }
+.umInner .badge{ color:#111; border-color: rgba(0,0,0,.14); background: rgba(0,0,0,.06); }
+.umInner .wbaBadge{ color:#111; border-color: rgba(0,0,0,.12); background: rgba(0,0,0,.06); }
+.umInner .wbaBadge.no{ background: rgba(255,90,90,.10); border-color: rgba(255,120,120,.26); }
+.umInner .pill{ border-color: rgba(0,0,0,.10); }
+.umInner .okP{ background: rgba(70,255,160,.10); }
+.umInner .badP{ background: rgba(255,90,90,.10); }
+.umDate{ font-size:12px; color: rgba(0,0,0,.60); margin-top: 8px; }
 
 /* mobile */
 @media(max-width: 1400px){
