@@ -381,8 +381,10 @@ export default function Home() {
 
       if (error) throw error
       setRecent(((data as any[]) || []) as ExperienceRow[])
-    } catch (e: any) {
+   } catch (e: any) {
   console.error('loadRecent error:', e)
+  setExpMsg(e?.message ?? 'Son deneyimler yüklenemedi')
+  setRecent([])
 } finally {
       setRecentLoading(false)
     }
