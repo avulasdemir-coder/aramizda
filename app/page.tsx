@@ -3,10 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
 
 type Profile = {
   user_id: string
@@ -93,8 +90,7 @@ export default function Home() {
   // add product
   const [newBrand, setNewBrand] = useState('')
   const [newName, setNewName] = useState('')
-  const [categoryChoice, setCategoryChoice] =
-    useState<(typeof CATEGORY_OPTIONS)[number]>('Cilt Bakım')
+  const [categoryChoice, setCategoryChoice] = useState<(typeof CATEGORY_OPTIONS)[number]>('Cilt Bakım')
   const [customCategory, setCustomCategory] = useState('')
   const [newPhoto, setNewPhoto] = useState<File | null>(null)
   const [addingProduct, setAddingProduct] = useState(false)
@@ -174,11 +170,7 @@ export default function Home() {
 
   async function loadProfile(uid: string) {
     setProfileErr(null)
-    const res = await supabase
-      .from('profiles')
-      .select('user_id,username,avatar_url,is_admin')
-      .eq('user_id', uid)
-      .maybeSingle()
+    const res = await supabase.from('profiles').select('user_id,username,avatar_url,is_admin').eq('user_id', uid).maybeSingle()
 
     if (res.error) {
       setProfile(null)
@@ -265,29 +257,17 @@ export default function Home() {
       const name = newName.trim()
       if (!brand || !name) throw new Error('Marka ve ürün adı zorunlu')
 
-      const category =
-        categoryChoice === 'Diğer' ? (customCategory.trim() || null) : (categoryChoice as string)
+      const category = categoryChoice === 'Diğer' ? (customCategory.trim() || null) : (categoryChoice as string)
 
       setAddingProduct(true)
 
-      // Aynı isimli ürünü tekrar eklemeyi engelle (tam/benzer: case-insensitive)
-      const dupName = await supabase
-        .from('products')
-        .select('id')
-        .ilike('name', name)
-        .limit(1)
-
+      // Aynı isimli ürünü tekrar eklemeyi engelle (case-insensitive)
+      const dupName = await supabase.from('products').select('id').ilike('name', name).limit(1)
       if (dupName.error) throw dupName.error
       if (dupName.data && dupName.data.length > 0) throw new Error('Bu ürün zaten ekli')
 
-      // Aynı brand + name kombinasyonu da engellensin (ekstra güvenlik)
-      const dupCombo = await supabase
-        .from('products')
-        .select('id')
-        .ilike('brand', brand)
-        .ilike('name', name)
-        .limit(1)
-
+      // Aynı brand + name kombinasyonu da engellensin
+      const dupCombo = await supabase.from('products').select('id').ilike('brand', brand).ilike('name', name).limit(1)
       if (dupCombo.error) throw dupCombo.error
       if (dupCombo.data && dupCombo.data.length > 0) throw new Error('Bu ürün zaten ekli')
 
@@ -357,11 +337,8 @@ export default function Home() {
       await loadRecent()
       await loadProductReviews(selected.id)
     } catch (e: any) {
-  console.error('loadRecent error:', e)
-  // ekranda da görelim diye:
-  setPErr(e?.message ?? 'Son deneyimler yüklenemedi')
-  setRecent([])
-} finally {
+      setExpMsg(e?.message ?? 'Deneyim eklenemedi')
+    } finally {
       setAddingExp(false)
     }
   }
@@ -370,22 +347,22 @@ export default function Home() {
     setRecentLoading(true)
     try {
       const { data, error } = await supabase
-  .from('experiences')
-  .select(`
-    id,user_id,product_id,rating,pros,cons,would_buy_again,image_url,created_at,
-    product:products(id,brand,name,category,image_url,created_at),
-    author:profiles(username,avatar_url)
-  `)
-  .order('created_at', { ascending: false })
-  .limit(50)
+        .from('experiences')
+        .select(`
+          id,user_id,product_id,rating,pros,cons,would_buy_again,image_url,created_at,
+          product:products(id,brand,name,category,image_url,created_at),
+          author:profiles(username,avatar_url)
+        `)
+        .order('created_at', { ascending: false })
+        .limit(50)
 
       if (error) throw error
       setRecent(((data as any[]) || []) as ExperienceRow[])
-   } catch (e: any) {
-  console.error('loadRecent error:', e)
-  setExpMsg(e?.message ?? 'Son deneyimler yüklenemedi')
-  setRecent([])
-} finally {
+    } catch (e: any) {
+      console.error('loadRecent error:', e)
+      setExpMsg(e?.message ?? 'Son deneyimler yüklenemedi')
+      setRecent([])
+    } finally {
       setRecentLoading(false)
     }
   }
@@ -482,12 +459,7 @@ export default function Home() {
 
             <div className="field">
               <div className="label">Kullanıcı adı</div>
-              <input
-                className="input"
-                value={usernameDraft}
-                onChange={(e) => setUsernameDraft(e.target.value)}
-                placeholder="ör: ulas, gizem"
-              />
+              <input className="input" value={usernameDraft} onChange={(e) => setUsernameDraft(e.target.value)} placeholder="ör: ulas, gizem" />
             </div>
 
             <div className="field">
@@ -520,12 +492,7 @@ export default function Home() {
                 }}
               >
                 <div className="row">
-                  <input
-                    className="input"
-                    value={q}
-                    onChange={(e) => setQ(e.target.value)}
-                    placeholder="ör: bee beauty"
-                  />
+                  <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="ör: bee beauty" />
                   <button className="btn btnSm" type="submit" disabled={pLoading}>
                     {pLoading ? '…' : 'Ara'}
                   </button>
@@ -556,11 +523,7 @@ export default function Home() {
                   </div>
                 ) : (
                   products.map((p) => (
-                    <button
-                      key={p.id}
-                      className={`item ${selected?.id === p.id ? 'active' : ''}`}
-                      onClick={() => setSelected(p)}
-                    >
+                    <button key={p.id} className={`item ${selected?.id === p.id ? 'active' : ''}`} onClick={() => setSelected(p)}>
                       {p.image_url ? (
                         <img
                           className="thumb clickable"
@@ -595,11 +558,7 @@ export default function Home() {
 
               <div className="field">
                 <div className="label">Puan</div>
-                <select
-                  className="input"
-                  value={rating}
-                  onChange={(e) => setRating(parseInt(e.target.value, 10))}
-                >
+                <select className="input" value={rating} onChange={(e) => setRating(parseInt(e.target.value, 10))}>
                   {[1, 2, 3, 4, 5].map((n) => (
                     <option key={n} value={n}>
                       {n}
@@ -669,12 +628,7 @@ export default function Home() {
               {categoryChoice === 'Diğer' ? (
                 <div className="field">
                   <div className="label">Diğer kategori</div>
-                  <input
-                    className="input"
-                    value={customCategory}
-                    onChange={(e) => setCustomCategory(e.target.value)}
-                    placeholder="ör: Anne&Bebek"
-                  />
+                  <input className="input" value={customCategory} onChange={(e) => setCustomCategory(e.target.value)} placeholder="ör: Anne&Bebek" />
                 </div>
               ) : null}
 
@@ -707,11 +661,7 @@ export default function Home() {
                     {productReviews.map((r) => (
                       <div className="r" key={r.id}>
                         <div className="rHead">
-                          {r.author?.avatar_url ? (
-                            <img className="avSm" src={r.author.avatar_url} alt="" />
-                          ) : (
-                            <div className="avSm ph" />
-                          )}
+                          {r.author?.avatar_url ? <img className="avSm" src={r.author.avatar_url} alt="" /> : <div className="avSm ph" />}
                           <div className="rMeta">
                             <div className="rUser">{r.author?.username || 'Kullanıcı'}</div>
                             <div className="muted small">{new Date(r.created_at).toLocaleString('tr-TR')}</div>
@@ -719,8 +669,16 @@ export default function Home() {
                           <div className="badge">{typeof r.rating === 'number' ? `${r.rating}/5` : '-'}</div>
                         </div>
 
-                        {r.pros ? <div className="pill okP">(+)&nbsp;{r.pros}</div> : null}
-{r.cons ? <div className="pill badP">(-)&nbsp;{r.cons}</div> : null}
+                        {r.pros ? (
+                          <div className="pill okP">
+                            <strong>Artılar</strong> (+)&nbsp;{r.pros}
+                          </div>
+                        ) : null}
+                        {r.cons ? (
+                          <div className="pill badP">
+                            <strong>Eksiler</strong> (-)&nbsp;{r.cons}
+                          </div>
+                        ) : null}
 
                         {r.image_url ? (
                           <img
@@ -756,8 +714,16 @@ export default function Home() {
 
                       <div className="muted small">{r.product ? `${r.product.brand} — ${r.product.name}` : 'Ürün'}</div>
 
-                      {r.pros ? <div className="pill okP">(+)&nbsp;{r.pros}</div> : null}
-                      {r.cons ? <div className="pill badP">(-)&nbsp;{r.cons}</div> : null}
+                      {r.pros ? (
+                        <div className="pill okP">
+                          <strong>Artılar</strong> (+)&nbsp;{r.pros}
+                        </div>
+                      ) : null}
+                      {r.cons ? (
+                        <div className="pill badP">
+                          <strong>Eksiler</strong> (-)&nbsp;{r.cons}
+                        </div>
+                      ) : null}
 
                       {r.image_url ? (
                         <img
