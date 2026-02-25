@@ -1,12 +1,9 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
 
 type Profile = {
   user_id: string
@@ -39,9 +36,9 @@ type ExperienceRow = {
 }
 
 type ProductStats = {
-  avg: number | null
+  avg10: number | null
   count: number
-  wbaRate: number | null // 0-100
+  wbaPct: number | null
 }
 
 function safeExt(fileName: string) {
@@ -78,26 +75,16 @@ async function uploadImage(file: File, folder: string) {
 
 const CATEGORY_OPTIONS = ['Cilt Bakım', 'Makyaj', 'Saç', 'Vücut', 'Parfüm', 'Güneş', 'Ağız Bakım', 'Diğer'] as const
 
-function clamp10(n: number | null) {
-  if (typeof n !== 'number' || Number.isNaN(n)) return null
-  // Eski veriler 1-5 geldiyse, 10’luk sisteme çevirmek için *2 yap.
-  // (Yeni sistemde zaten 1-10 girilecek.)
-  const v = n <= 5 ? n * 2 : n
-  return Math.max(1, Math.min(10, v))
+function clamp01(n: number) {
+  return Math.max(0, Math.min(1, n))
 }
 
-function formatAvg(avg: number | null) {
-  if (avg == null) return '—'
-  const s = avg.toFixed(1).replace('.', ',')
-  return `${s}/10`
-}
-
-function titleCaseTR(s: string) {
-  // Basit: kelime başlarını büyüt
+function titleCaseTr(s: string) {
+  // basit: her kelimenin ilk harfi büyük
   return s
     .split(' ')
     .filter(Boolean)
-    .map((w) => w.charAt(0).toLocaleUpperCase('tr-TR') + w.slice(1))
+    .map((w) => w.slice(0, 1).toUpperCase() + w.slice(1))
     .join(' ')
 }
 
@@ -119,15 +106,12 @@ export default function Home() {
   const [pLoading, setPLoading] = useState(false)
   const [pErr, setPErr] = useState<string | null>(null)
 
-  // product stats (avg / count / wba%)
+  // product stats (for current search list)
   const [stats, setStats] = useState<Record<string, ProductStats>>({})
 
-  // brands (for dropdown)
-  const [brands, setBrands] = useState<string[]>([])
-  const [brandChoice, setBrandChoice] = useState<string>('Hepsi')
-  const [brandFallback, setBrandFallback] = useState('') // sadece ürün yoksa ilk marka için
-
   // add product
+  const [brandChoice, setBrandChoice] = useState<string>('') // dropdown selection
+  const [brandCustom, setBrandCustom] = useState<string>('') // shown if "NEW"
   const [newName, setNewName] = useState('')
   const [categoryChoice, setCategoryChoice] = useState<(typeof CATEGORY_OPTIONS)[number] | ''>('')
   const [customCategory, setCustomCategory] = useState('')
@@ -136,41 +120,48 @@ export default function Home() {
   const [addProductMsg, setAddProductMsg] = useState<string | null>(null)
 
   // add experience
-  const [rating, setRating] = useState(8) // 10 üzerinden
+  const [ratingStr, setRatingStr] = useState<string>('') // empty by default
   const [pros, setPros] = useState('')
   const [cons, setCons] = useState('')
-  const [wba, setWba] = useState(false) // default boş
+  const [wba, setWba] = useState<boolean | null>(null) // null => boş bırakılırsa ✖ Tekrar Almam
   const [expPhoto, setExpPhoto] = useState<File | null>(null)
   const [addingExp, setAddingExp] = useState(false)
   const [expMsg, setExpMsg] = useState<string | null>(null)
 
-  // recent (global)
+  // recent
   const [recent, setRecent] = useState<ExperienceRow[]>([])
   const [recentLoading, setRecentLoading] = useState(false)
 
-  // lightbox (images)
+  // lightbox
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [lightboxAlt, setLightboxAlt] = useState<string>('Fotoğraf')
+
+  // product reviews modal
+  const [reviewsOpen, setReviewsOpen] = useState(false)
+  const [reviewsProduct, setReviewsProduct] = useState<Product | null>(null)
+  const [reviews, setReviews] = useState<ExperienceRow[]>([])
+  const [reviewsLoading, setReviewsLoading] = useState(false)
+  const [expandedReviewIds, setExpandedReviewIds] = useState<Record<string, boolean>>({})
+
+  // user profile modal (from clicking username)
+  const [userModalOpen, setUserModalOpen] = useState(false)
+  const [userModalTitle, setUserModalTitle] = useState<string>('Kullanıcı')
+  const [userModalAvatar, setUserModalAvatar] = useState<string | null>(null)
+  const [userModalUserId, setUserModalUserId] = useState<string | null>(null)
+  const [userExperiences, setUserExperiences] = useState<ExperienceRow[]>([])
+  const [userExperiencesLoading, setUserExperiencesLoading] = useState(false)
 
   // profile modal
   const [profileOpen, setProfileOpen] = useState(false)
 
-  // reviews modal (product)
-  const [reviewsOpen, setReviewsOpen] = useState(false)
-  const [reviewsProduct, setReviewsProduct] = useState<Product | null>(null)
-  const [productReviews, setProductReviews] = useState<ExperienceRow[]>([])
-  const [productReviewsLoading, setProductReviewsLoading] = useState(false)
-  const [expandedReviewIds, setExpandedReviewIds] = useState<Record<string, boolean>>({})
-
-  // user page modal
-  const [userOpen, setUserOpen] = useState(false)
-  const [userView, setUserView] = useState<{ user_id: string; username: string; avatar_url: string | null } | null>(null)
-  const [userLoading, setUserLoading] = useState(false)
-  const [userProducts, setUserProducts] = useState<{ product: Product; experiences: ExperienceRow[] }[]>([])
-  const [userComments, setUserComments] = useState<ExperienceRow[]>([])
-  const [userTab, setUserTab] = useState<'products' | 'comments'>('products')
-
   const needsUsername = !!userId && (!profile?.username || profile.username.trim().length < 2)
+
+  const brandOptions = useMemo(() => {
+    const set = new Set<string>()
+    for (const p of products) set.add(p.brand)
+    // ayrıca DB’den markaları toplayalım: (minimum)
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'tr'))
+  }, [products])
 
   const selectedLabel = useMemo(() => {
     if (!selected) return 'Seçili Ürün Yok (Önce Soldan Ürün Seç)'
@@ -178,6 +169,7 @@ export default function Home() {
     return `${selected.brand} — ${selected.name}${cat}`
   }, [selected])
 
+  // --- auth bootstrap
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       const uid = data.session?.user?.id ?? null
@@ -185,21 +177,23 @@ export default function Home() {
       if (uid) {
         loadProfile(uid)
         loadRecent()
-        loadBrands()
       }
     })
 
     const { data: sub } = supabase.auth.onAuthStateChange((_evt, session) => {
       const uid = session?.user?.id ?? null
       setUserId(uid)
+
       setSelected(null)
       setProducts([])
-      setRecent([])
       setStats({})
+      setRecent([])
+      setReviews([])
+      setReviewsOpen(false)
+
       if (uid) {
         loadProfile(uid)
         loadRecent()
-        loadBrands()
       } else {
         setProfile(null)
       }
@@ -209,25 +203,9 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Arama kutusu temizlenirse: liste + selected temizlensin
-  useEffect(() => {
-    if (q.trim() === '') {
-      setProducts([])
-      setSelected(null)
-      setStats({})
-      setPErr(null)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q])
-
   async function loadProfile(uid: string) {
     setProfileErr(null)
-    const res = await supabase
-      .from('profiles')
-      .select('user_id,username,avatar_url,is_admin')
-      .eq('user_id', uid)
-      .maybeSingle()
-
+    const res = await supabase.from('profiles').select('user_id,username,avatar_url,is_admin').eq('user_id', uid).maybeSingle()
     if (res.error) {
       setProfile(null)
       setProfileErr(res.error.message)
@@ -235,17 +213,6 @@ export default function Home() {
     }
     setProfile((res.data as Profile) ?? null)
     setUsernameDraft(res.data?.username ?? '')
-  }
-
-  async function loadBrands() {
-    // products’tan brand’leri çekip alfabetik sırala
-    const res = await supabase.from('products').select('brand').limit(2000)
-    if (res.error) return
-    const uniq = Array.from(
-      new Set(((res.data as any[]) || []).map((r) => String(r.brand || '').trim()).filter(Boolean))
-    )
-    uniq.sort((a, b) => a.localeCompare(b, 'tr', { sensitivity: 'base' }))
-    setBrands(uniq)
   }
 
   async function saveProfile() {
@@ -282,74 +249,43 @@ export default function Home() {
       options: { redirectTo: `${window.location.origin}/` },
     })
   }
-
   async function signOut() {
     await supabase.auth.signOut()
+  }
+
+  // --- search helpers
+  function resetSearchState() {
+    setProducts([])
+    setStats({})
+    setSelected(null)
+    setPErr(null)
+    setAddProductMsg(null)
   }
 
   async function searchProducts() {
     setPErr(null)
     setAddProductMsg(null)
     setPLoading(true)
-    setStats({})
     try {
       const term = q.trim()
       if (!term) {
-        setProducts([])
+        resetSearchState()
         return
       }
-
-      const or = `name.ilike.%${term}%,brand.ilike.%${term}%,category.ilike.%${term}%`
 
       const { data, error } = await supabase
         .from('products')
         .select('id,brand,name,category,image_url,created_at')
-        .or(or)
+        .or(`name.ilike.%${term}%,brand.ilike.%${term}%,category.ilike.%${term}%`)
         .order('created_at', { ascending: false })
         .limit(50)
 
       if (error) throw error
-      const list = ((data as Product[]) ?? []) as Product[]
+      const list = (data as Product[]) ?? []
       setProducts(list)
 
-      // stats hesapla (avg / count / wba)
-      const ids = list.map((p) => p.id)
-      if (ids.length > 0) {
-        const ex = await supabase
-          .from('experiences')
-          .select('product_id,rating,would_buy_again')
-          .in('product_id', ids)
-          .limit(5000)
-
-        if (!ex.error) {
-          const m: Record<string, { sum: number; cnt: number; wbaYes: number; wbaCnt: number }> = {}
-          for (const row of (ex.data as any[]) || []) {
-            const pid = String(row.product_id)
-            if (!m[pid]) m[pid] = { sum: 0, cnt: 0, wbaYes: 0, wbaCnt: 0 }
-            const r10 = clamp10(typeof row.rating === 'number' ? row.rating : null)
-            if (r10 != null) {
-              m[pid].sum += r10
-              m[pid].cnt += 1
-            }
-            if (typeof row.would_buy_again === 'boolean') {
-              m[pid].wbaCnt += 1
-              if (row.would_buy_again) m[pid].wbaYes += 1
-            }
-          }
-          const out: Record<string, ProductStats> = {}
-          for (const pid of ids) {
-            const it = m[pid]
-            if (!it) {
-              out[pid] = { avg: null, count: 0, wbaRate: null }
-              continue
-            }
-            const avg = it.cnt > 0 ? it.sum / it.cnt : null
-            const wbaRate = it.wbaCnt > 0 ? Math.round((it.wbaYes / it.wbaCnt) * 100) : null
-            out[pid] = { avg, count: it.cnt, wbaRate }
-          }
-          setStats(out)
-        }
-      }
+      // stats
+      await loadStatsForProducts(list.map((p) => p.id))
     } catch (e: any) {
       setPErr(e?.message ?? 'Ürün araması başarısız')
     } finally {
@@ -357,48 +293,89 @@ export default function Home() {
     }
   }
 
-  function validateAddProductInputs() {
-    const errs: string[] = []
-    const chosenBrand = brandChoice === 'Hepsi' ? '' : brandChoice
-    const brand = (chosenBrand || '').trim()
-    const name = newName.trim()
-    const category = categoryChoice
+  async function loadStatsForProducts(productIds: string[]) {
+    if (productIds.length === 0) {
+      setStats({})
+      return
+    }
 
-    if (!brand) errs.push('Marka seç')
-    if (!category) errs.push('Kategori seç')
-    if (category === 'Diğer' && !customCategory.trim()) errs.push('Diğer kategori yaz')
-    if (!name) errs.push('Ürün adı yaz')
+    // deneyimleri çek, JS’de hesapla
+    const { data, error } = await supabase
+      .from('experiences')
+      .select('product_id,rating,would_buy_again')
+      .in('product_id', productIds)
+      .limit(5000)
 
-    return errs
+    if (error) {
+      // stats olmadan devam
+      setStats({})
+      return
+    }
+
+    const map: Record<string, { sum: number; n: number; wbaTrue: number; wbaKnown: number }> = {}
+    for (const pid of productIds) map[pid] = { sum: 0, n: 0, wbaTrue: 0, wbaKnown: 0 }
+
+    for (const row of (data as any[]) || []) {
+      const pid = row.product_id as string
+      if (!map[pid]) map[pid] = { sum: 0, n: 0, wbaTrue: 0, wbaKnown: 0 }
+
+      const r = typeof row.rating === 'number' ? (row.rating as number) : null
+      if (typeof r === 'number') {
+        map[pid].sum += r
+        map[pid].n += 1
+      }
+
+      if (row.would_buy_again === true || row.would_buy_again === false) {
+        map[pid].wbaKnown += 1
+        if (row.would_buy_again === true) map[pid].wbaTrue += 1
+      }
+    }
+
+    const out: Record<string, ProductStats> = {}
+    for (const pid of Object.keys(map)) {
+      const m = map[pid]
+      const avg10 = m.n > 0 ? Math.round((m.sum / m.n) * 10) / 10 : null
+      const wbaPct = m.wbaKnown > 0 ? Math.round((m.wbaTrue / m.wbaKnown) * 100) : null
+      out[pid] = { avg10, count: m.n, wbaPct }
+    }
+    setStats(out)
   }
 
+  // --- add product
   async function addProduct() {
     setPErr(null)
     setAddProductMsg(null)
+
     try {
       if (!userId) throw new Error('Giriş gerekli')
 
-      const vErrs = validateAddProductInputs()
-      if (vErrs.length) throw new Error(vErrs.join(' • '))
-
+      // brand
       const brand =
-        (brandChoice !== 'Hepsi' ? brandChoice : '').trim() || brandFallback.trim() // fallback sadece ürün yokken
+        brandChoice === '__NEW__'
+          ? brandCustom.trim()
+          : brandChoice.trim()
+
+      // category
+      const category =
+        categoryChoice === 'Diğer' ? (customCategory.trim() || null) : (categoryChoice ? String(categoryChoice) : null)
+
       const name = newName.trim()
 
-      const category =
-        categoryChoice === 'Diğer' ? (customCategory.trim() || null) : (categoryChoice as string)
+      const missing: string[] = []
+      if (!brand) missing.push('Marka')
+      if (!name) missing.push('Ürün Adı')
+      if (!category) missing.push('Kategori')
+
+      if (missing.length) {
+        throw new Error(`${missing.join(', ')} zorunlu`)
+      }
 
       setAddingProduct(true)
 
-      // Aynı isimli ürünü tekrar eklemeyi engelle (case-insensitive)
-      const dupName = await supabase.from('products').select('id').ilike('name', name).limit(1)
-      if (dupName.error) throw dupName.error
-      if (dupName.data && dupName.data.length > 0) throw new Error('Bu ürün zaten ekli')
-
-      // Aynı brand + name kombinasyonu da engellensin
-      const dupCombo = await supabase.from('products').select('id').ilike('brand', brand).ilike('name', name).limit(1)
-      if (dupCombo.error) throw dupCombo.error
-      if (dupCombo.data && dupCombo.data.length > 0) throw new Error('Bu ürün zaten ekli')
+      // duplicate name (case-insensitive)
+      const dup = await supabase.from('products').select('id').ilike('name', name).limit(1)
+      if (dup.error) throw dup.error
+      if (dup.data && dup.data.length > 0) throw new Error('Bu ürün zaten ekli')
 
       let image_url: string | null = null
       if (newPhoto) image_url = await uploadImage(newPhoto, 'products')
@@ -412,15 +389,14 @@ export default function Home() {
       if (ins.error) throw ins.error
 
       setAddProductMsg('Ürün eklendi')
+      setBrandChoice('')
+      setBrandCustom('')
       setNewName('')
       setCategoryChoice('')
       setCustomCategory('')
       setNewPhoto(null)
 
-      // markalar güncellensin
-      await loadBrands()
-
-      // Eklenen ürün seçilsin ve arama varsa yenilensin
+      // aramada bir şey varsa tekrar çek
       setSelected(ins.data as Product)
       if (q.trim()) await searchProducts()
     } catch (e: any) {
@@ -431,12 +407,16 @@ export default function Home() {
     }
   }
 
+  // --- add experience
   async function addExperience() {
     setExpMsg(null)
     try {
       if (!userId) throw new Error('Giriş gerekli')
       if (!profile?.username) throw new Error('Önce kullanıcı adı belirle')
       if (!selected) throw new Error('Önce ürün seç')
+
+      const r10 = ratingStr ? parseInt(ratingStr, 10) : NaN
+      if (!Number.isFinite(r10) || r10 < 1 || r10 > 10) throw new Error('Puan seç')
 
       setAddingExp(true)
 
@@ -448,10 +428,10 @@ export default function Home() {
         .insert({
           user_id: userId,
           product_id: selected.id,
-          rating, // 1-10
+          rating: r10,
           pros: pros.trim() || null,
           cons: cons.trim() || null,
-          would_buy_again: wba,
+          would_buy_again: wba === true ? true : false, // boş bırakılırsa false
           image_url,
         })
         .select('id')
@@ -461,14 +441,15 @@ export default function Home() {
 
       setPros('')
       setCons('')
-      setRating(8)
-      setWba(false)
+      setRatingStr('')
+      setWba(null)
       setExpPhoto(null)
       setExpMsg('Deneyim eklendi')
 
       await loadRecent()
-      // stats tazelensin (listede görünür)
       if (q.trim()) await searchProducts()
+      // reviews modal açıksa güncelle
+      if (reviewsOpen && reviewsProduct?.id) await loadReviews(reviewsProduct.id)
     } catch (e: any) {
       setExpMsg(e?.message ?? 'Deneyim eklenemedi')
     } finally {
@@ -476,20 +457,19 @@ export default function Home() {
     }
   }
 
+  // --- recent
   async function loadRecent() {
     setRecentLoading(true)
     try {
       const { data, error } = await supabase
         .from('experiences')
-        .select(
-          `
+        .select(`
           id,user_id,product_id,rating,pros,cons,would_buy_again,image_url,created_at,
           product:products(id,brand,name,category,image_url,created_at),
           author:profiles(username,avatar_url)
-        `
-        )
+        `)
         .order('created_at', { ascending: false })
-        .limit(50)
+        .limit(30)
 
       if (error) throw error
       setRecent(((data as any[]) || []) as ExperienceRow[])
@@ -500,101 +480,64 @@ export default function Home() {
     }
   }
 
-  async function loadProductReviews(product: Product) {
-    setProductReviewsLoading(true)
+  // --- reviews modal
+  async function loadReviews(productId: string) {
+    setReviewsLoading(true)
     setExpandedReviewIds({})
     try {
       const { data, error } = await supabase
         .from('experiences')
-        .select(
-          `
+        .select(`
           id,user_id,product_id,rating,pros,cons,would_buy_again,image_url,created_at,
-          author:profiles(username,avatar_url)
-        `
-        )
-        .eq('product_id', product.id)
+          author:profiles(username,avatar_url),
+          product:products(id,brand,name,category,image_url,created_at)
+        `)
+        .eq('product_id', productId)
         .order('created_at', { ascending: false })
         .limit(200)
 
       if (error) throw error
-      setProductReviews(((data as any[]) || []) as ExperienceRow[])
-      setReviewsProduct(product)
-      setReviewsOpen(true)
+      setReviews(((data as any[]) || []) as ExperienceRow[])
     } catch {
-      setProductReviews([])
-      setReviewsProduct(product)
-      setReviewsOpen(true)
+      setReviews([])
     } finally {
-      setProductReviewsLoading(false)
+      setReviewsLoading(false)
     }
   }
 
-  async function openUser(user_id: string, username: string, avatar_url: string | null) {
-    setUserOpen(true)
-    setUserView({ user_id, username, avatar_url })
-    setUserTab('products')
-    setUserLoading(true)
-    setUserProducts([])
-    setUserComments([])
+  function openReviews(p: Product) {
+    setReviewsProduct(p)
+    setReviewsOpen(true)
+    loadReviews(p.id)
+  }
 
+  // --- user modal
+  async function openUserModal(userId: string, username: string, avatarUrl: string | null) {
+    setUserModalUserId(userId)
+    setUserModalTitle(username || 'Kullanıcı')
+    setUserModalAvatar(avatarUrl)
+    setUserModalOpen(true)
+
+    setUserExperiencesLoading(true)
     try {
-      // Yaptığı yorumlar
-      const commentsRes = await supabase
+      const { data, error } = await supabase
         .from('experiences')
-        .select(
-          `
+        .select(`
           id,user_id,product_id,rating,pros,cons,would_buy_again,image_url,created_at,
           product:products(id,brand,name,category,image_url,created_at),
           author:profiles(username,avatar_url)
-        `
-        )
-        .eq('user_id', user_id)
+        `)
+        .eq('user_id', userId)
         .order('created_at', { ascending: false })
-        .limit(300)
+        .limit(200)
 
-      if (!commentsRes.error) {
-        const comments = (((commentsRes.data as any[]) || []) as ExperienceRow[]).map((r) => ({
-          ...r,
-          rating: clamp10(r.rating),
-        }))
-        setUserComments(comments)
-
-        // “Eklediği Ürünler” için (şemada ürünün sahibi yoksa) en güvenli yaklaşım:
-        // Kullanıcının yorum yaptığı ürünleri "Eklediği Ürünler" adı altında göstereceğiz.
-        // (DB’de products.user_id varsa ileride gerçek ekleyen bilgisini bağlarız.)
-        const byProduct: Record<string, { product: Product; experiences: ExperienceRow[] }> = {}
-        for (const r of comments) {
-          const p = r.product
-          if (!p) continue
-          if (!byProduct[p.id]) byProduct[p.id] = { product: p, experiences: [] }
-          byProduct[p.id].experiences.push(r)
-        }
-        const groups = Object.values(byProduct).sort((a, b) => {
-          const ad = a.product.created_at || ''
-          const bd = b.product.created_at || ''
-          return bd.localeCompare(ad)
-        })
-        setUserProducts(groups)
-      }
+      if (error) throw error
+      setUserExperiences(((data as any[]) || []) as ExperienceRow[])
+    } catch {
+      setUserExperiences([])
     } finally {
-      setUserLoading(false)
+      setUserExperiencesLoading(false)
     }
-  }
-
-  function reviewText(r: ExperienceRow) {
-    const a = r.pros?.trim()
-    const e = r.cons?.trim()
-    const parts: string[] = []
-    if (a) parts.push(`Artılar: ${a}`)
-    if (e) parts.push(`Eksiler: ${e}`)
-    if (!parts.length) return '—'
-    return parts.join('  ')
-  }
-
-  function snippet(s: string, max = 120) {
-    const t = s.replace(/\s+/g, ' ').trim()
-    if (t.length <= max) return { text: t, cut: false }
-    return { text: t.slice(0, max).trimEnd() + '…', cut: true }
   }
 
   // UI
@@ -614,8 +557,6 @@ export default function Home() {
       </div>
     )
   }
-
-  const effectiveBrands = ['Hepsi', ...brands]
 
   return (
     <div className="wrap">
@@ -638,7 +579,7 @@ export default function Home() {
           <div className="rightCol">
             <button
               type="button"
-              className="userPill userPillPremium"
+              className="userPill"
               onClick={() => {
                 setUsernameDraft(profile?.username ?? '')
                 setAvatarDraft(null)
@@ -650,7 +591,7 @@ export default function Home() {
               <div className="uname">{profile?.username || 'Profil'}</div>
             </button>
 
-            <button className="btn ghost btnSm btnTiny" onClick={signOut}>
+            <button className="btn ghost btnXs" onClick={signOut}>
               Çıkış
             </button>
           </div>
@@ -658,22 +599,17 @@ export default function Home() {
 
         {needsUsername ? (
           <div className="card">
-            <div className="h2">Kullanıcı adı</div>
+            <div className="h2">Kullanıcı Adı</div>
             <div className="muted">Bu isim yorumlarda görünecek</div>
 
             <div className="field">
-              <div className="label">{titleCaseTR('kullanıcı adı')}</div>
+              <div className="label b">Kullanıcı Adı</div>
               <input className="input" value={usernameDraft} onChange={(e) => setUsernameDraft(e.target.value)} placeholder="ör: ulas, gizem" />
             </div>
 
             <div className="field">
-              <div className="label">{titleCaseTR('profil fotoğrafı (opsiyonel)')}</div>
-              <input
-                className="file"
-                type="file"
-                accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
-                onChange={(e) => setAvatarDraft(e.target.files?.[0] ?? null)}
-              />
+              <div className="label b">Profil Fotoğrafı (Opsiyonel)</div>
+              <input className="file" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" onChange={(e) => setAvatarDraft(e.target.files?.[0] ?? null)} />
               <div className="muted small">5 MB Altı</div>
             </div>
 
@@ -696,7 +632,18 @@ export default function Home() {
                 }}
               >
                 <div className="row">
-                  <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="ör: bee beauty" />
+                  <input
+                    className="input"
+                    value={q}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      setQ(v)
+                      if (!v.trim()) {
+                        resetSearchState()
+                      }
+                    }}
+                    placeholder="ör: bee beauty"
+                  />
                   <button className="btn btnSm" type="submit" disabled={pLoading}>
                     {pLoading ? '…' : 'Ara'}
                   </button>
@@ -727,62 +674,57 @@ export default function Home() {
                   </div>
                 ) : (
                   products.map((p) => {
-                    const st = stats[p.id] || { avg: null, count: 0, wbaRate: null }
-                    const wbaText =
-                      st.wbaRate == null
-                        ? 'Tekrar Alma Oranı: —'
-                        : `Tekrar Alma Oranı: % ${st.wbaRate}`
+                    const st = stats[p.id]
+                    const avg = st?.avg10
+                    const cnt = st?.count ?? 0
+                    const wbaPct = st?.wbaPct
 
                     return (
-                      <div key={p.id} className={`itemWrap ${selected?.id === p.id ? 'active' : ''}`}>
-                        <button
-                          className="item"
-                          onClick={() => {
-                            setSelected(p)
-                          }}
-                        >
-                          {p.image_url ? (
-                            <img
-                              className="thumb clickable"
-                              src={p.image_url}
-                              alt=""
+                      <button
+                        key={p.id}
+                        className={`item ${selected?.id === p.id ? 'active' : ''}`}
+                        onClick={() => setSelected(p)}
+                      >
+                        {p.image_url ? (
+                          <img
+                            className="thumb clickable"
+                            src={p.image_url}
+                            alt=""
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setLightboxAlt(`${p.brand} — ${p.name}`)
+                              setLightboxUrl(p.image_url!)
+                            }}
+                          />
+                        ) : (
+                          <div className="thumb ph" />
+                        )}
+
+                        <div className="mid">
+                          <div className="t">
+                            {p.brand} — {p.name}
+                          </div>
+
+                          <div className="muted small meta2">
+                            <span>Ortalama Puan: {typeof avg === 'number' ? avg.toFixed(1) : '—'}</span>
+                            <button
+                              type="button"
+                              className="linkBtn"
                               onClick={(e) => {
                                 e.stopPropagation()
-                                setLightboxAlt(`${p.brand} — ${p.name}`)
-                                setLightboxUrl(p.image_url!)
+                                openReviews(p)
                               }}
-                            />
-                          ) : (
-                            <div className="thumb ph" />
-                          )}
-
-                          <div className="mid">
-                            <div className="t">
-                              {p.brand} — {p.name}
-                            </div>
-
-                            <div className="muted small line2">
-                              <span>{p.category || 'Kategori yok'}</span>
-                              <span className="dot">•</span>
-                              <span>Ortalama Puan: {formatAvg(st.avg)}</span>
-                              <span className="dot">•</span>
-                              <button
-                                type="button"
-                                className="linkBtn"
-                                onClick={(e) => {
-                                  e.preventDefault()
-                                  e.stopPropagation()
-                                  loadProductReviews(p)
-                                }}
-                              >
-                                {st.count} Yorum
-                              </button>
-                            </div>
-
-                            <div className="muted small line3">{wbaText}</div>
+                            >
+                              Yorum ({cnt})
+                            </button>
                           </div>
-                        </button>
-                      </div>
+
+                          <div className="muted small meta2">
+                            <span>Tekrar Alma Oranı: {typeof wbaPct === 'number' ? `% ${wbaPct}` : '—'}</span>
+                            <span>{p.category || 'Kategori yok'}</span>
+                          </div>
+                        </div>
+                      </button>
                     )
                   })
                 )}
@@ -795,10 +737,11 @@ export default function Home() {
               <div className="muted small">{selectedLabel}</div>
 
               <div className="field">
-                <div className="label">{titleCaseTR('puan')}</div>
-                <select className="input" value={rating} onChange={(e) => setRating(parseInt(e.target.value, 10))}>
-                  {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
-                    <option key={n} value={n}>
+                <div className="label b">Puan</div>
+                <select className="input" value={ratingStr} onChange={(e) => setRatingStr(e.target.value)}>
+                  <option value="">Seç</option>
+                  {[1,2,3,4,5,6,7,8,9,10].map((n) => (
+                    <option key={n} value={String(n)}>
                       {n}
                     </option>
                   ))}
@@ -806,28 +749,32 @@ export default function Home() {
               </div>
 
               <div className="field">
-                <div className="label">{titleCaseTR('artılar')}</div>
+                <div className="label b">Artılar</div>
                 <textarea className="ta" value={pros} onChange={(e) => setPros(e.target.value)} />
               </div>
 
               <div className="field">
-                <div className="label">{titleCaseTR('eksiler')}</div>
+                <div className="label b">Eksiler</div>
                 <textarea className="ta" value={cons} onChange={(e) => setCons(e.target.value)} />
               </div>
 
-              <label className="check">
-                <input type="checkbox" checked={wba} onChange={(e) => setWba(e.target.checked)} />
-                <span>Tekrar alırım</span>
-              </label>
+              <div className="field">
+                <div className="label b">Tekrar Alırım</div>
+                <div className="row" style={{ marginBottom: 0 }}>
+                  <label className="radio">
+                    <input type="radio" name="wba" checked={wba === true} onChange={() => setWba(true)} />
+                    <span>✔ Tekrar Alırım</span>
+                  </label>
+                  <label className="radio">
+                    <input type="radio" name="wba" checked={wba !== true} onChange={() => setWba(false)} />
+                    <span>✖ Tekrar Almam</span>
+                  </label>
+                </div>
+              </div>
 
               <div className="field">
-                <div className="label">{titleCaseTR('deneyim fotoğrafı (opsiyonel)')}</div>
-                <input
-                  className="file"
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
-                  onChange={(e) => setExpPhoto(e.target.files?.[0] ?? null)}
-                />
+                <div className="label b">Deneyim Fotoğrafı (Opsiyonel)</div>
+                <input className="file" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" onChange={(e) => setExpPhoto(e.target.files?.[0] ?? null)} />
                 <div className="muted small">5 MB Altı</div>
               </div>
 
@@ -849,19 +796,23 @@ export default function Home() {
               ) : (
                 <div className="recent">
                   {recent.map((r) => {
-                    const r10 = clamp10(r.rating)
+                    const r10 = typeof r.rating === 'number' ? r.rating : null
                     const badge =
-                      r.would_buy_again === true ? <span className="badge2 okB">✔ Tekrar Alırım</span> : <span className="badge2 badB">✖ Tekrar Almam</span>
+                      r.would_buy_again === true ? (
+                        <span className="wbaBadge">✔ Tekrar Alırım</span>
+                      ) : (
+                        <span className="wbaBadge no">✖ Tekrar Almam</span>
+                      )
 
                     return (
                       <div
-                        className="r"
                         key={r.id}
+                        className="r clickableCard"
                         onClick={() => {
-                          // deneyimde ürün adını tıklayınca ürün seçilsin ve arama gibi listede görünsün
                           if (r.product) {
+                            setSelected(r.product)
                             setQ(`${r.product.brand} ${r.product.name}`)
-                            // searchProducts form submit gibi davran
+                            // arama sonuçlarının da gelmesi için
                             setTimeout(() => {
                               searchProducts().then(() => setSelected(r.product as Product))
                             }, 0)
@@ -873,22 +824,21 @@ export default function Home() {
                         <div className="rHead">
                           <button
                             type="button"
-                            className="userInline"
+                            className="userLink"
                             onClick={(e) => {
                               e.stopPropagation()
-                              openUser(r.user_id, r.author?.username || 'Kullanıcı', r.author?.avatar_url || null)
+                              const u = r.author?.username || 'Kullanıcı'
+                              const av = r.author?.avatar_url || null
+                              openUserModal(r.user_id, u, av)
                             }}
                           >
                             {r.author?.avatar_url ? <img className="avSm" src={r.author.avatar_url} alt="" /> : <div className="avSm ph" />}
-                            <div className="rUser">{r.author?.username || 'Kullanıcı'}</div>
+                            <span className="rUser">{r.author?.username || 'Kullanıcı'}</span>
                           </button>
 
-                          <div className="rMeta">
-                            <div className="muted small">{new Date(r.created_at).toLocaleString('tr-TR')}</div>
-                          </div>
-
-                          <div className="badge">
-                            {typeof r10 === 'number' ? `${r10}/10` : '—'} {badge}
+                          <div className="rRight">
+                            <div className="badge">{r10 !== null ? `${r10}/10` : '—'}</div>
+                            {badge}
                           </div>
                         </div>
 
@@ -929,32 +879,34 @@ export default function Home() {
               <div className="h2">Ürün Ekle</div>
 
               <div className="field">
-                <div className="label">{titleCaseTR('marka')}</div>
-                {brands.length > 0 ? (
-                  <select className="input" value={brandChoice} onChange={(e) => setBrandChoice(e.target.value)}>
-                    {effectiveBrands.map((b) => (
-                      <option key={b} value={b}>
-                        {b}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <>
-                    <div className="muted small">Henüz marka yok. İlk ürünü eklemek için bir marka yaz.</div>
-                    <input className="input" value={brandFallback} onChange={(e) => setBrandFallback(e.target.value)} placeholder="ör: essence" />
-                  </>
-                )}
+                <div className="label b">Marka</div>
+                <select className="input" value={brandChoice} onChange={(e) => setBrandChoice(e.target.value)}>
+                  <option value="">Seç</option>
+                  {brandOptions.map((b) => (
+                    <option key={b} value={b}>
+                      {b}
+                    </option>
+                  ))}
+                  <option value="__NEW__">Yeni marka</option>
+                </select>
               </div>
 
+              {brandChoice === '__NEW__' ? (
+                <div className="field">
+                  <div className="label b">Yeni Marka</div>
+                  <input className="input" value={brandCustom} onChange={(e) => setBrandCustom(e.target.value)} placeholder="ör: Essence" />
+                </div>
+              ) : null}
+
               <div className="field">
-                <div className="label">{titleCaseTR('ürün adı')}</div>
+                <div className="label b">Ürün Adı</div>
                 <input className="input" value={newName} onChange={(e) => setNewName(e.target.value)} />
               </div>
 
               <div className="field">
-                <div className="label">{titleCaseTR('kategori')}</div>
+                <div className="label b">Kategori</div>
                 <select className="input" value={categoryChoice} onChange={(e) => setCategoryChoice(e.target.value as any)}>
-                  <option value="">Kategori Seç</option>
+                  <option value="">Seç</option>
                   {CATEGORY_OPTIONS.map((c) => (
                     <option key={c} value={c}>
                       {c}
@@ -965,38 +917,27 @@ export default function Home() {
 
               {categoryChoice === 'Diğer' ? (
                 <div className="field">
-                  <div className="label">{titleCaseTR('diğer kategori')}</div>
-                  <input className="input" value={customCategory} onChange={(e) => setCustomCategory(e.target.value)} placeholder="ör: Anne&Bebek" />
+                  <div className="label b">Diğer Kategori</div>
+                  <input className="input" value={customCategory} onChange={(e) => setCustomCategory(e.target.value)} placeholder="ör: Anne & Bebek" />
                 </div>
               ) : null}
 
               <div className="field">
-                <div className="label">{titleCaseTR('ürün fotoğrafı (opsiyonel)')}</div>
-                <input
-                  className="file"
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
-                  onChange={(e) => setNewPhoto(e.target.files?.[0] ?? null)}
-                />
+                <div className="label b">Ürün Fotoğrafı (Opsiyonel)</div>
+                <input className="file" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" onChange={(e) => setNewPhoto(e.target.files?.[0] ?? null)} />
                 <div className="muted small">5 MB Altı</div>
               </div>
 
               <button className="btn btnSm" onClick={addProduct} disabled={addingProduct}>
                 {addingProduct ? 'Ekleniyor…' : 'Ekle'}
               </button>
-
-              <div className="divider" />
-
-              <div className="muted small">
-                Marka ve kategori seçmeden ürün eklenmez. Kategori zorunlu.
-              </div>
             </section>
           </main>
         )}
 
         <div className="foot muted small">© ARAMIZDA</div>
 
-        {/* Profile modal (kendi profilin) */}
+        {/* Profile modal */}
         {profileOpen ? (
           <div className="pm" onClick={() => setProfileOpen(false)} role="dialog" aria-modal="true">
             <div className="pmInner" onClick={(e) => e.stopPropagation()}>
@@ -1007,18 +948,13 @@ export default function Home() {
               <div className="h2">Profil</div>
 
               <div className="field">
-                <div className="label">{titleCaseTR('kullanıcı adı')}</div>
+                <div className="label b">Kullanıcı Adı</div>
                 <input className="input" value={usernameDraft} onChange={(e) => setUsernameDraft(e.target.value)} />
               </div>
 
               <div className="field">
-                <div className="label">{titleCaseTR('profil fotoğrafı')}</div>
-                <input
-                  className="file"
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
-                  onChange={(e) => setAvatarDraft(e.target.files?.[0] ?? null)}
-                />
+                <div className="label b">Profil Fotoğrafı</div>
+                <input className="file" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" onChange={(e) => setAvatarDraft(e.target.files?.[0] ?? null)} />
                 <div className="muted small">5 MB Altı</div>
               </div>
 
@@ -1031,9 +967,7 @@ export default function Home() {
                     try {
                       await saveProfile()
                       setProfileOpen(false)
-                    } catch {
-                      // mesaj zaten ekranda
-                    }
+                    } catch {}
                   }}
                   disabled={savingProfile}
                 >
@@ -1044,7 +978,7 @@ export default function Home() {
           </div>
         ) : null}
 
-        {/* Reviews Modal */}
+        {/* Reviews modal */}
         {reviewsOpen ? (
           <div className="rm" onClick={() => setReviewsOpen(false)} role="dialog" aria-modal="true">
             <div className="rmInner" onClick={(e) => e.stopPropagation()}>
@@ -1052,65 +986,61 @@ export default function Home() {
                 ×
               </button>
 
-              <div className="rmTop">
-                <div className="h2 rmTitle">
-                  {reviewsProduct ? `${reviewsProduct.brand} — ${reviewsProduct.name}` : 'Yorumlar'}
-                </div>
+              <div className="rmTitle">
+                <div className="h2" style={{ marginBottom: 6 }}>Yorumlar</div>
                 <div className="muted small">
-                  Yorumlar en son tarihliden başlar
+                  {reviewsProduct ? `${reviewsProduct.brand} — ${reviewsProduct.name}` : ''}
                 </div>
               </div>
 
-              {productReviewsLoading ? (
+              {reviewsLoading ? (
                 <div className="muted">Yükleniyor…</div>
-              ) : productReviews.length === 0 ? (
+              ) : reviews.length === 0 ? (
                 <div className="muted small"> </div>
               ) : (
                 <div className="rmList">
-                  {productReviews.map((r) => {
-                    const rid = r.id
-                    const expanded = !!expandedReviewIds[rid]
-                    const r10 = clamp10(r.rating)
-                    const full = reviewText(r)
-                    const sn = snippet(full, 120)
+                  {reviews.map((r) => {
+                    const expanded = !!expandedReviewIds[r.id]
+                    const txt = [r.pros ? `Artılar: ${r.pros}` : '', r.cons ? `Eksiler: ${r.cons}` : '']
+                      .filter(Boolean)
+                      .join(' • ')
+                      .trim()
 
-                    const badge =
-                      r.would_buy_again === true ? <span className="badge2 okB">✔ Tekrar Alırım</span> : <span className="badge2 badB">✖ Tekrar Almam</span>
+                    const r10 = typeof r.rating === 'number' ? r.rating : null
+                    const badge = r.would_buy_again === true ? '✔ Tekrar Alırım' : '✖ Tekrar Almam'
 
                     return (
-                      <button
+                      <div
                         key={r.id}
-                        type="button"
-                        className="rmRow"
-                        onClick={() => setExpandedReviewIds((x) => ({ ...x, [rid]: !x[rid] }))}
+                        className={`rmCard ${expanded ? 'open' : ''}`}
+                        onClick={() => setExpandedReviewIds((s) => ({ ...s, [r.id]: !expanded }))}
+                        role="button"
+                        tabIndex={0}
                       >
-                        <div className="rmLine1">
+                        <div className="rmRow1">
                           <button
                             type="button"
-                            className="userInline"
+                            className="userLink"
                             onClick={(e) => {
                               e.stopPropagation()
-                              openUser(r.user_id, r.author?.username || 'Kullanıcı', r.author?.avatar_url || null)
+                              const u = r.author?.username || 'Kullanıcı'
+                              const av = r.author?.avatar_url || null
+                              openUserModal(r.user_id, u, av)
                             }}
                           >
                             {r.author?.avatar_url ? <img className="avSm" src={r.author.avatar_url} alt="" /> : <div className="avSm ph" />}
-                            <b className="rmUser">{r.author?.username || 'Kullanıcı'}</b>
+                            <span className="rmUser">{r.author?.username || 'Kullanıcı'}</span>
                           </button>
 
-                          <div className="rmMetaRight">
-                            <span className="rmRate">{typeof r10 === 'number' ? `Puan: ${r10}/10` : 'Puan: —'}</span>
-                            {badge}
+                          <div className="rmRight">
+                            <span className="badge">{r10 !== null ? `${r10}/10` : '—'}</span>
+                            <span className={`wbaBadge ${r.would_buy_again === true ? '' : 'no'}`}>{badge}</span>
                           </div>
                         </div>
 
-                        <div className="rmLine2">
-                          {expanded ? full : sn.text}
-                        </div>
-
-                        <div className="rmLine3 muted small">
-                          {new Date(r.created_at).toLocaleString('tr-TR')}
-                        </div>
-                      </button>
+                        <div className={`rmText ${expanded ? 'open' : ''}`}>{txt || ' '}</div>
+                        <div className="muted small">{new Date(r.created_at).toLocaleString('tr-TR')}</div>
+                      </div>
                     )
                   })}
                 </div>
@@ -1119,89 +1049,61 @@ export default function Home() {
           </div>
         ) : null}
 
-        {/* User Modal */}
-        {userOpen && userView ? (
-          <div className="um" onClick={() => setUserOpen(false)} role="dialog" aria-modal="true">
+        {/* User modal */}
+        {userModalOpen ? (
+          <div className="um" onClick={() => setUserModalOpen(false)} role="dialog" aria-modal="true">
             <div className="umInner" onClick={(e) => e.stopPropagation()}>
-              <button className="umClose" onClick={() => setUserOpen(false)} aria-label="Kapat">
+              <button className="umClose" onClick={() => setUserModalOpen(false)} aria-label="Kapat">
                 ×
               </button>
 
               <div className="umHead">
-                <div className="umUserBox">
-                  {userView.avatar_url ? <img className="umAv" src={userView.avatar_url} alt="" /> : <div className="umAv ph" />}
-                  <div className="umName"><b>{userView.username}</b></div>
-                </div>
-
-                <div className="umTabs">
-                  <button type="button" className={`tab ${userTab === 'products' ? 'active' : ''}`} onClick={() => setUserTab('products')}>
-                    Eklediği Ürünler
-                  </button>
-                  <button type="button" className={`tab ${userTab === 'comments' ? 'active' : ''}`} onClick={() => setUserTab('comments')}>
-                    Yaptığı Yorumlar
-                  </button>
+                {userModalAvatar ? <img className="umAv" src={userModalAvatar} alt="" /> : <div className="umAv ph" />}
+                <div>
+                  <div className="h2" style={{ marginBottom: 4 }}>{userModalTitle}</div>
+                  <div className="muted small">Yaptığı Yorumlar</div>
                 </div>
               </div>
 
-              {userLoading ? (
+              {userExperiencesLoading ? (
                 <div className="muted">Yükleniyor…</div>
-              ) : userTab === 'products' ? (
-                userProducts.length === 0 ? (
-                  <div className="muted small"> </div>
-                ) : (
-                  <div className="umList">
-                    {userProducts.map((g) => (
-                      <div key={g.product.id} className="umCard">
-                        <div className="umProd">
-                          <div className="t">{g.product.brand} — {g.product.name}</div>
-                          <div className="muted small">{g.product.category || ''}</div>
-                        </div>
-                        <div className="umExpList">
-                          {g.experiences.map((r) => {
-                            const r10 = clamp10(r.rating)
-                            return (
-                              <div key={r.id} className="umExp">
-                                <div className="muted small">
-                                  {typeof r10 === 'number' ? `Puan: ${r10}/10` : 'Puan: —'}{' '}
-                                  {r.would_buy_again === true ? '• ✔ Tekrar Alırım' : '• ✖ Tekrar Almam'}
-                                </div>
-                                {r.pros ? <div className="pill okP"><b>Artılar:</b> {r.pros}</div> : null}
-                                {r.cons ? <div className="pill badP"><b>Eksiler:</b> {r.cons}</div> : null}
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )
               ) : (
-                userComments.length === 0 ? (
-                  <div className="muted small"> </div>
-                ) : (
-                  <div className="umList">
-                    {userComments.map((r) => {
-                      const r10 = clamp10(r.rating)
-                      return (
-                        <div key={r.id} className="umCard">
-                          <div className="muted small">
-                            {r.product ? `${r.product.brand} — ${r.product.name}` : 'Ürün'} •{' '}
-                            {typeof r10 === 'number' ? `Puan: ${r10}/10` : 'Puan: —'} •{' '}
+                <div className="umList">
+                  {userExperiences.map((r) => {
+                    const r10 = typeof r.rating === 'number' ? r.rating : null
+                    return (
+                      <div key={r.id} className="umCard">
+                        <div className="umTop">
+                          <div className="badge">{r10 !== null ? `${r10}/10` : '—'}</div>
+                          <div className={`wbaBadge ${r.would_buy_again === true ? '' : 'no'}`}>
                             {r.would_buy_again === true ? '✔ Tekrar Alırım' : '✖ Tekrar Almam'}
                           </div>
-                          {r.pros ? <div className="pill okP"><b>Artılar:</b> {r.pros}</div> : null}
-                          {r.cons ? <div className="pill badP"><b>Eksiler:</b> {r.cons}</div> : null}
                         </div>
-                      )
-                    })}
-                  </div>
-                )
+
+                        {r.product ? <div className="t">{r.product.brand} — {r.product.name}</div> : null}
+
+                        {r.pros ? (
+                          <div className="pill okP">
+                            <b>Artılar:</b> {r.pros}
+                          </div>
+                        ) : null}
+                        {r.cons ? (
+                          <div className="pill badP">
+                            <b>Eksiler:</b> {r.cons}
+                          </div>
+                        ) : null}
+
+                        <div className="muted small">{new Date(r.created_at).toLocaleString('tr-TR')}</div>
+                      </div>
+                    )
+                  })}
+                </div>
               )}
             </div>
           </div>
         ) : null}
 
-        {/* Lightbox (images) */}
+        {/* Lightbox */}
         {lightboxUrl ? (
           <div className="lb" onClick={() => setLightboxUrl(null)} role="dialog" aria-modal="true">
             <div className="lbInner" onClick={(e) => e.stopPropagation()}>
@@ -1241,13 +1143,13 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
     linear-gradient(135deg, #4a1677, #c03a9f);
 }
 .center{ min-height: calc(100vh - 36px); display:grid; place-items:center; }
-.app{ max-width: 1500px; margin:0 auto; display:flex; flex-direction:column; gap: 14px; }
+.app{ max-width: 1380px; margin:0 auto; display:flex; flex-direction:column; gap: 14px; }
 
 .topbar{
   display:flex;
   align-items:center;
   justify-content:space-between;
-  padding: 12px 20px;
+  padding: 10px 18px;
   border-radius: var(--r);
   border:1px solid var(--stroke);
   background: linear-gradient(180deg, var(--glass2), var(--glass));
@@ -1255,8 +1157,7 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   box-shadow: var(--shadow);
   position: sticky; top: 12px; z-index: 20;
 }
-.brand{ display:flex; align-items:center; gap: 18px; }
-
+.brand{ display:flex; align-items:center; gap: 14px; }
 .logo{
   width: 124px;
   height: 124px;
@@ -1265,31 +1166,22 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   border-radius: 30px;
   background: #0e0e14;
   border: 1px solid rgba(255,255,255,.18);
-  box-shadow:
-    0 35px 80px rgba(0,0,0,.55),
-    inset 0 0 0 1px rgba(255,255,255,.06);
+  box-shadow: 0 35px 80px rgba(0,0,0,.55), inset 0 0 0 1px rgba(255,255,255,.06);
 }
 .word{ font-weight: 900; font-size: 26px; letter-spacing: .22em; text-transform: uppercase; }
 
-.rightCol{
-  display:flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 10px;
-}
-
+.rightCol{ display:flex; flex-direction:column; align-items:flex-end; gap: 10px; }
 .userPill{
   display:flex; align-items:center; gap:12px;
   height: 44px;
   padding: 0 16px;
-  border-radius: 16px;
+  border-radius: 999px;
   border:1px solid rgba(255,255,255,.28);
-  cursor:pointer;
   background: linear-gradient(145deg, rgba(0,0,0,.55), rgba(0,0,0,.35));
-  color: #ffffff;
+  color: var(--text);
+  cursor: pointer;
   box-shadow: 0 12px 30px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.06);
 }
-.userPillPremium{ font-weight: 900; }
 .av{ width: 30px; height: 30px; border-radius: 999px; object-fit: cover; border:1px solid rgba(255,255,255,.22); }
 .av.ph{ background: rgba(255,255,255,.14); }
 .uname{ font-weight: 900; font-size: 13px; }
@@ -1307,17 +1199,12 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   box-shadow: 0 12px 30px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.06);
   transition: all .2s ease;
 }
-.btn:hover{
-  transform: translateY(-2px);
-  box-shadow: 0 18px 40px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.08);
-}
-.btn.ghost{
-  background: rgba(255,255,255,.10);
-  border:1px solid rgba(255,255,255,.20);
-}
+.btn:hover{ transform: translateY(-2px); box-shadow: 0 18px 40px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.08); }
+.btn.ghost{ background: rgba(255,255,255,.10); border:1px solid rgba(255,255,255,.20); }
 .btn:disabled{ opacity:.6; cursor:not-allowed; transform:none; }
 .btnSm{ height: 46px; display:inline-flex; align-items:center; justify-content:center; padding: 0 18px; }
-.btnTiny{ height: 38px; padding: 0 14px; border-radius: 14px; font-size: 12px; }
+.btnXs{ height: 38px; padding: 0 14px; border-radius: 14px; font-weight: 900; }
+
 .boldBtn{ font-weight: 900; }
 
 .card{
@@ -1333,6 +1220,7 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
 .h2{ font-size: 16px; font-weight: 900; margin-bottom: 10px; }
 .muted{ color: var(--muted); }
 .small{ font-size: 12px; }
+.b{ font-weight: 900; }
 
 .grid4{
   display:grid;
@@ -1343,14 +1231,7 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
 .tall{ min-height: 520px; }
 
 .row{ display:flex; gap:10px; align-items:center; margin-bottom: 10px; }
-
-.label{
-  font-size: 12px;
-  color: var(--text);
-  margin-bottom: 6px;
-  font-weight: 900;
-}
-
+.label{ font-size: 12px; color: var(--muted); margin-bottom: 6px; }
 .field{ margin-top: 10px; }
 
 .input,.ta,.file, select.input{
@@ -1382,15 +1263,10 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
 .list{
   margin-top: 10px;
   display:flex; flex-direction:column; gap:10px;
-  max-height: 380px; overflow:auto; padding-right: 2px;
+  max-height: 420px; overflow:auto; padding-right: 2px;
 }
-
-.itemWrap{ border-radius: var(--r2); }
-.itemWrap.active .item{ border-color: rgba(255,255,255,.28); background: rgba(255,255,255,.08); }
-
 .item{
-  width:100%;
-  display:flex; gap:12px; align-items:center;
+  display:flex; gap:12px; align-items:flex-start;
   border-radius: var(--r2);
   border:1px solid rgba(255,255,255,.14);
   background: rgba(0,0,0,.16);
@@ -1399,27 +1275,29 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   color: var(--text);
   text-align:left;
 }
-
-.thumb{ width:44px; height:44px; border-radius: 14px; object-fit: cover; border:1px solid rgba(255,255,255,.18); }
+.item.active{ border-color: rgba(255,255,255,.28); background: rgba(255,255,255,.08); }
+.thumb{ width:44px; height:44px; border-radius: 14px; object-fit: cover; border:1px solid rgba(255,255,255,.18); flex:0 0 auto; }
 .thumb.ph{ background: rgba(255,255,255,.10); }
 .mid{ flex:1; min-width:0; }
 .t{ font-weight: 900; }
-.line2,.line3{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
-.dot{ opacity:.7; }
-
+.meta2{ display:flex; gap: 10px; align-items:center; flex-wrap:wrap; }
 .linkBtn{
-  background: transparent;
-  border: none;
-  padding: 0;
-  margin: 0;
+  appearance:none; border:none; background: transparent;
   color: rgba(255,255,255,.92);
   font-weight: 900;
-  cursor: pointer;
   text-decoration: underline;
-  text-decoration-thickness: 2px;
+  cursor:pointer;
+  padding: 0;
 }
 
-.check{ display:flex; align-items:center; gap:10px; margin-top: 10px; font-weight: 900; }
+.radio{
+  display:flex; align-items:center; gap:8px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(0,0,0,.16);
+  font-weight: 900;
+}
 
 .err{
   margin-top: 10px;
@@ -1436,98 +1314,51 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   border: 1px solid rgba(120,255,190,.24);
 }
 
-.divider{ height: 1px; background: rgba(255,255,255,.16); margin: 14px 0; }
-
-.recent{ display:flex; flex-direction:column; gap: 10px; max-height: 360px; overflow:auto; padding-right: 2px; }
-
-.r{
-  border:1px solid rgba(255,255,255,.14);
-  background: rgba(0,0,0,.14);
-  border-radius: var(--r2);
-  padding: 10px;
-  cursor: pointer;
-}
+.recent{ display:flex; flex-direction:column; gap: 10px; max-height: 420px; overflow:auto; padding-right: 2px; }
+.r{ border:1px solid rgba(255,255,255,.14); background: rgba(0,0,0,.14); border-radius: var(--r2); padding: 10px; }
+.clickableCard{ cursor:pointer; }
 .rHead{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom: 8px; }
-
-.userInline{
-  display:flex;
-  align-items:center;
-  gap:10px;
-  border: none;
-  background: transparent;
-  padding: 0;
-  cursor: pointer;
-  color: var(--text);
-  text-align:left;
+.userLink{
+  appearance:none; border:none; background: transparent; color: var(--text);
+  display:flex; align-items:center; gap:10px; cursor:pointer; padding: 0;
 }
 .avSm{ width:28px; height:28px; border-radius:999px; object-fit:cover; border:1px solid rgba(255,255,255,.22); }
 .avSm.ph{ background: rgba(255,255,255,.12); }
 .rUser{ font-weight: 900; }
+.rRight{ display:flex; align-items:center; gap:10px; }
+.badge{ font-weight: 900; padding: 6px 10px; border-radius: 999px; background: rgba(255,255,255,.10); border:1px solid rgba(255,255,255,.18); }
+.wbaBadge{ font-weight: 900; padding: 6px 10px; border-radius: 999px; background: rgba(70,255,160,.12); border:1px solid rgba(120,255,190,.24); }
+.wbaBadge.no{ background: rgba(255,90,90,.12); border:1px solid rgba(255,120,120,.24); }
 
-.rMeta{ flex:1; min-width:0; }
-
-.badge{
-  display:flex;
-  align-items:center;
-  gap:10px;
-  font-weight: 900;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: rgba(255,255,255,.10);
-  border:1px solid rgba(255,255,255,.18);
-}
-.badge2{
-  font-weight: 900;
-  padding: 6px 10px;
-  border-radius: 999px;
-  border:1px solid rgba(255,255,255,.18);
-  background: rgba(255,255,255,.10);
-}
-.okB{ background: rgba(70,255,160,.12); }
-.badB{ background: rgba(255,90,90,.12); }
-
-.pLine{ margin-top: 2px; }
-
+.pLine{ margin-bottom: 8px; }
 .pill{ margin-top: 8px; padding: 8px 10px; border-radius: 14px; border:1px solid rgba(255,255,255,.14); }
 .okP{ background: rgba(70,255,160,.10); }
 .badP{ background: rgba(255,90,90,.10); }
-
 .rImg{ width: 100%; max-height: 220px; object-fit: cover; border-radius: 14px; border:1px solid rgba(255,255,255,.18); margin-top: 10px; }
 
 .foot{ text-align:center; padding: 6px 0; }
-
 .clickable { cursor: zoom-in; }
 
 /* Lightbox */
 .lb{
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
+  position: fixed; inset: 0; z-index: 9999;
   background: rgba(0,0,0,.65);
   backdrop-filter: blur(10px);
-  display: grid;
-  place-items: center;
-  padding: 18px;
+  display: grid; place-items: center; padding: 18px;
 }
 .lbInner{
-  width: min(920px, 96vw);
-  max-height: 90vh;
+  width: min(920px, 96vw); max-height: 90vh;
   border-radius: 18px;
   border: 1px solid rgba(255,255,255,.18);
   background: rgba(15, 5, 20, .55);
   box-shadow: 0 30px 90px rgba(0,0,0,.55);
   padding: 14px;
   position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  display: flex; flex-direction: column; gap: 10px;
 }
 .lbClose{
-  position: absolute;
-  top: 10px;
-  right: 12px;
-  width: 36px;
-  height: 36px;
+  position: absolute; top: 10px; right: 12px;
+  width: 36px; height: 36px;
   border-radius: 999px;
   border: 1px solid rgba(255,255,255,.22);
   background: rgba(0,0,0,.35);
@@ -1535,30 +1366,15 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   font-size: 22px;
   cursor: pointer;
 }
-.lbImg{
-  width: 100%;
-  height: auto;
-  max-height: 72vh;
-  object-fit: contain;
-  border-radius: 14px;
-  border: 1px solid rgba(255,255,255,.14);
-}
-.lbCap{
-  font-size: 12px;
-  color: rgba(255,255,255,.75);
-  text-align: center;
-}
+.lbImg{ width: 100%; height: auto; max-height: 72vh; object-fit: contain; border-radius: 14px; border: 1px solid rgba(255,255,255,.14); }
+.lbCap{ font-size: 12px; color: rgba(255,255,255,.75); text-align: center; }
 
-/* Profile Modal (kendi profilin) */
+/* Profile Modal */
 .pm{
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
+  position: fixed; inset: 0; z-index: 9999;
   background: rgba(0,0,0,.55);
   backdrop-filter: blur(10px);
-  display: grid;
-  place-items: center;
-  padding: 18px;
+  display: grid; place-items: center; padding: 18px;
 }
 .pmInner{
   width: min(560px, 96vw);
@@ -1570,11 +1386,8 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   position: relative;
 }
 .pmClose{
-  position: absolute;
-  top: 10px;
-  right: 12px;
-  width: 36px;
-  height: 36px;
+  position: absolute; top: 10px; right: 12px;
+  width: 36px; height: 36px;
   border-radius: 999px;
   border: 1px solid rgba(255,255,255,.22);
   background: rgba(0,0,0,.35);
@@ -1583,142 +1396,108 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   cursor: pointer;
 }
 
-/* Reviews Modal (pembe üzerine beyaz) */
+/* Reviews Modal (pembe üstü beyaz) */
 .rm{
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  background: rgba(255,255,255,.35);
+  position: fixed; inset: 0; z-index: 9999;
+  background: rgba(192, 58, 159, .25);
   backdrop-filter: blur(10px);
-  display: grid;
-  place-items: center;
-  padding: 18px;
+  display: grid; place-items: center; padding: 18px;
 }
 .rmInner{
-  width: min(860px, 96vw);
+  width: min(980px, 96vw);
   max-height: 90vh;
-  overflow: auto;
   border-radius: 22px;
-  border: 1px solid rgba(255,255,255,.55);
-  background:
-    radial-gradient(900px 500px at 20% 0%, rgba(255,255,255,.65), rgba(255,255,255,.35)),
-    linear-gradient(135deg, rgba(255,255,255,.78), rgba(255,255,255,.55));
+  border: 1px solid rgba(255,255,255,.25);
+  background: rgba(255,255,255,.92);
   box-shadow: 0 30px 90px rgba(0,0,0,.35);
   padding: 16px;
   position: relative;
-  color: #1a1020;
+  color: #12121a;
+  overflow: hidden;
 }
-.rmInner .muted{ color: rgba(0,0,0,.55); }
 .rmClose{
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  width: 36px;
-  height: 36px;
+  position: absolute; top: 10px; right: 12px;
+  width: 36px; height: 36px;
   border-radius: 999px;
   border: 1px solid rgba(0,0,0,.12);
-  background: rgba(255,255,255,.75);
+  background: rgba(255,255,255,.9);
   color: #111;
   font-size: 22px;
   cursor: pointer;
 }
-.rmTop{ margin-bottom: 10px; }
-.rmTitle{ color: #1a1020; }
-.rmList{ display:flex; flex-direction:column; gap:10px; padding-top: 8px; }
-.rmRow{
-  width:100%;
-  text-align:left;
+.rmTitle{ margin-bottom: 12px; }
+.rmList{ max-height: calc(90vh - 120px); overflow:auto; display:flex; flex-direction:column; gap: 10px; padding-right: 4px; }
+.rmCard{
   border-radius: 18px;
-  border: 1px solid rgba(0,0,0,.10);
-  background: rgba(255,255,255,.70);
+  border: 1px solid rgba(0,0,0,.08);
+  background: rgba(255,255,255,.98);
   padding: 12px;
-  cursor: pointer;
+  cursor:pointer;
 }
-.rmLine1{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:12px;
-  margin-bottom: 8px;
-}
+.rmRow1{ display:flex; align-items:center; justify-content:space-between; gap: 10px; margin-bottom: 8px; }
 .rmUser{ font-weight: 900; }
-.rmMetaRight{ display:flex; align-items:center; gap:10px; }
-.rmRate{ font-weight: 900; }
-.rmLine2{ color: rgba(0,0,0,.78); line-height: 1.35; }
-.rmLine3{ margin-top: 8px; }
+.rmRight{ display:flex; align-items:center; gap: 10px; }
+.rmText{
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.35;
+  margin-bottom: 6px;
+}
+.rmText.open{
+  -webkit-line-clamp: unset;
+}
 
 /* User Modal */
 .um{
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  background: rgba(0,0,0,.45);
+  position: fixed; inset: 0; z-index: 9999;
+  background: rgba(192, 58, 159, .18);
   backdrop-filter: blur(10px);
-  display: grid;
-  place-items: center;
-  padding: 18px;
+  display: grid; place-items: center; padding: 18px;
 }
 .umInner{
   width: min(980px, 96vw);
   max-height: 90vh;
-  overflow: auto;
   border-radius: 22px;
-  border: 1px solid rgba(255,255,255,.18);
-  background: rgba(15, 5, 20, .70);
-  box-shadow: 0 30px 90px rgba(0,0,0,.55);
+  border: 1px solid rgba(255,255,255,.25);
+  background: rgba(255,255,255,.92);
+  box-shadow: 0 30px 90px rgba(0,0,0,.35);
   padding: 16px;
   position: relative;
+  color: #12121a;
+  overflow: hidden;
 }
 .umClose{
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  width: 36px;
-  height: 36px;
+  position: absolute; top: 10px; right: 12px;
+  width: 36px; height: 36px;
   border-radius: 999px;
-  border: 1px solid rgba(255,255,255,.22);
-  background: rgba(0,0,0,.35);
-  color: #fff;
+  border: 1px solid rgba(0,0,0,.12);
+  background: rgba(255,255,255,.9);
+  color: #111;
   font-size: 22px;
   cursor: pointer;
 }
-.umHead{ display:flex; flex-direction:column; gap:12px; margin-bottom: 12px; }
-.umUserBox{ display:flex; align-items:center; gap:12px; }
-.umAv{ width: 44px; height: 44px; border-radius: 999px; object-fit: cover; border:1px solid rgba(255,255,255,.22); }
-.umAv.ph{ background: rgba(255,255,255,.14); }
-.umName{ font-size: 16px; }
-.umTabs{ display:flex; gap:10px; }
-.tab{
-  border:1px solid rgba(255,255,255,.18);
-  background: rgba(255,255,255,.10);
-  color: rgba(255,255,255,.92);
-  padding: 10px 12px;
-  border-radius: 14px;
-  cursor: pointer;
-  font-weight: 900;
-}
-.tab.active{
-  background: rgba(255,255,255,.18);
-  border-color: rgba(255,255,255,.28);
-}
-.umList{ display:flex; flex-direction:column; gap:10px; }
+.umHead{ display:flex; align-items:center; gap: 12px; margin-bottom: 12px; }
+.umAv{ width: 44px; height: 44px; border-radius: 999px; object-fit: cover; border: 1px solid rgba(0,0,0,.12); background: rgba(0,0,0,.06); }
+.umAv.ph{ background: rgba(0,0,0,.06); }
+.umList{ max-height: calc(90vh - 120px); overflow:auto; display:flex; flex-direction:column; gap: 10px; padding-right: 4px; }
 .umCard{
   border-radius: 18px;
-  border:1px solid rgba(255,255,255,.14);
-  background: rgba(0,0,0,.14);
+  border: 1px solid rgba(0,0,0,.08);
+  background: rgba(255,255,255,.98);
   padding: 12px;
 }
-.umProd{ margin-bottom: 10px; }
-.umExpList{ display:flex; flex-direction:column; gap:10px; }
-.umExp{ }
+.umTop{ display:flex; align-items:center; gap:10px; margin-bottom: 8px; }
 
-@media(max-width: 1300px){
+/* mobile */
+@media(max-width: 1400px){
   .grid4{ grid-template-columns: 1fr 1fr; }
 }
-@media(max-width: 900px){
+@media(max-width: 1100px){
   .grid4{ grid-template-columns: 1fr; }
   .tall{ min-height: auto; }
-  .list,.recent{ max-height: 280px; }
+  .list,.recent{ max-height: 320px; }
   .logo{ width: 96px; height: 96px; }
   .word{ font-size: 22px; }
 }
