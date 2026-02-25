@@ -3,7 +3,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 
-const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 type Profile = {
   user_id: string
@@ -33,6 +36,12 @@ type ExperienceRow = {
   created_at: string
   product?: Product | null
   author?: { username: string; avatar_url: string | null } | null
+}
+
+type ProductStats = {
+  avg: number | null
+  count: number
+  wbaRate: number | null // 0-100
 }
 
 function safeExt(fileName: string) {
@@ -69,6 +78,29 @@ async function uploadImage(file: File, folder: string) {
 
 const CATEGORY_OPTIONS = ['Cilt Bakım', 'Makyaj', 'Saç', 'Vücut', 'Parfüm', 'Güneş', 'Ağız Bakım', 'Diğer'] as const
 
+function clamp10(n: number | null) {
+  if (typeof n !== 'number' || Number.isNaN(n)) return null
+  // Eski veriler 1-5 geldiyse, 10’luk sisteme çevirmek için *2 yap.
+  // (Yeni sistemde zaten 1-10 girilecek.)
+  const v = n <= 5 ? n * 2 : n
+  return Math.max(1, Math.min(10, v))
+}
+
+function formatAvg(avg: number | null) {
+  if (avg == null) return '—'
+  const s = avg.toFixed(1).replace('.', ',')
+  return `${s}/10`
+}
+
+function titleCaseTR(s: string) {
+  // Basit: kelime başlarını büyüt
+  return s
+    .split(' ')
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toLocaleUpperCase('tr-TR') + w.slice(1))
+    .join(' ')
+}
+
 export default function Home() {
   // auth
   const [userId, setUserId] = useState<string | null>(null)
@@ -80,27 +112,34 @@ export default function Home() {
   const [profileErr, setProfileErr] = useState<string | null>(null)
   const [savingProfile, setSavingProfile] = useState(false)
 
-  // products
+  // products search
   const [q, setQ] = useState('')
   const [products, setProducts] = useState<Product[]>([])
   const [selected, setSelected] = useState<Product | null>(null)
   const [pLoading, setPLoading] = useState(false)
   const [pErr, setPErr] = useState<string | null>(null)
 
+  // product stats (avg / count / wba%)
+  const [stats, setStats] = useState<Record<string, ProductStats>>({})
+
+  // brands (for dropdown)
+  const [brands, setBrands] = useState<string[]>([])
+  const [brandChoice, setBrandChoice] = useState<string>('Hepsi')
+  const [brandFallback, setBrandFallback] = useState('') // sadece ürün yoksa ilk marka için
+
   // add product
-  const [newBrand, setNewBrand] = useState('')
   const [newName, setNewName] = useState('')
-  const [categoryChoice, setCategoryChoice] = useState<(typeof CATEGORY_OPTIONS)[number]>('Cilt Bakım')
+  const [categoryChoice, setCategoryChoice] = useState<(typeof CATEGORY_OPTIONS)[number] | ''>('')
   const [customCategory, setCustomCategory] = useState('')
   const [newPhoto, setNewPhoto] = useState<File | null>(null)
   const [addingProduct, setAddingProduct] = useState(false)
   const [addProductMsg, setAddProductMsg] = useState<string | null>(null)
 
   // add experience
-  const [rating, setRating] = useState(5)
+  const [rating, setRating] = useState(8) // 10 üzerinden
   const [pros, setPros] = useState('')
   const [cons, setCons] = useState('')
-  const [wba, setWba] = useState(false)
+  const [wba, setWba] = useState(false) // default boş
   const [expPhoto, setExpPhoto] = useState<File | null>(null)
   const [addingExp, setAddingExp] = useState(false)
   const [expMsg, setExpMsg] = useState<string | null>(null)
@@ -109,21 +148,32 @@ export default function Home() {
   const [recent, setRecent] = useState<ExperienceRow[]>([])
   const [recentLoading, setRecentLoading] = useState(false)
 
-  // selected product reviews
-  const [productReviews, setProductReviews] = useState<ExperienceRow[]>([])
-  const [productReviewsLoading, setProductReviewsLoading] = useState(false)
-
-  // lightbox
+  // lightbox (images)
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [lightboxAlt, setLightboxAlt] = useState<string>('Fotoğraf')
 
   // profile modal
   const [profileOpen, setProfileOpen] = useState(false)
 
+  // reviews modal (product)
+  const [reviewsOpen, setReviewsOpen] = useState(false)
+  const [reviewsProduct, setReviewsProduct] = useState<Product | null>(null)
+  const [productReviews, setProductReviews] = useState<ExperienceRow[]>([])
+  const [productReviewsLoading, setProductReviewsLoading] = useState(false)
+  const [expandedReviewIds, setExpandedReviewIds] = useState<Record<string, boolean>>({})
+
+  // user page modal
+  const [userOpen, setUserOpen] = useState(false)
+  const [userView, setUserView] = useState<{ user_id: string; username: string; avatar_url: string | null } | null>(null)
+  const [userLoading, setUserLoading] = useState(false)
+  const [userProducts, setUserProducts] = useState<{ product: Product; experiences: ExperienceRow[] }[]>([])
+  const [userComments, setUserComments] = useState<ExperienceRow[]>([])
+  const [userTab, setUserTab] = useState<'products' | 'comments'>('products')
+
   const needsUsername = !!userId && (!profile?.username || profile.username.trim().length < 2)
 
   const selectedLabel = useMemo(() => {
-    if (!selected) return 'Seçili ürün yok (Önce soldan ürün seç)'
+    if (!selected) return 'Seçili Ürün Yok (Önce Soldan Ürün Seç)'
     const cat = selected.category ? ` • ${selected.category}` : ''
     return `${selected.brand} — ${selected.name}${cat}`
   }, [selected])
@@ -135,6 +185,7 @@ export default function Home() {
       if (uid) {
         loadProfile(uid)
         loadRecent()
+        loadBrands()
       }
     })
 
@@ -144,10 +195,11 @@ export default function Home() {
       setSelected(null)
       setProducts([])
       setRecent([])
-      setProductReviews([])
+      setStats({})
       if (uid) {
         loadProfile(uid)
         loadRecent()
+        loadBrands()
       } else {
         setProfile(null)
       }
@@ -157,20 +209,24 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // seçili ürün değişince: o ürünün yorumlarını çek
+  // Arama kutusu temizlenirse: liste + selected temizlensin
   useEffect(() => {
-    if (!userId) return
-    if (!selected?.id) {
-      setProductReviews([])
-      return
+    if (q.trim() === '') {
+      setProducts([])
+      setSelected(null)
+      setStats({})
+      setPErr(null)
     }
-    loadProductReviews(selected.id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected?.id, userId])
+  }, [q])
 
   async function loadProfile(uid: string) {
     setProfileErr(null)
-    const res = await supabase.from('profiles').select('user_id,username,avatar_url,is_admin').eq('user_id', uid).maybeSingle()
+    const res = await supabase
+      .from('profiles')
+      .select('user_id,username,avatar_url,is_admin')
+      .eq('user_id', uid)
+      .maybeSingle()
 
     if (res.error) {
       setProfile(null)
@@ -179,6 +235,17 @@ export default function Home() {
     }
     setProfile((res.data as Profile) ?? null)
     setUsernameDraft(res.data?.username ?? '')
+  }
+
+  async function loadBrands() {
+    // products’tan brand’leri çekip alfabetik sırala
+    const res = await supabase.from('products').select('brand').limit(2000)
+    if (res.error) return
+    const uniq = Array.from(
+      new Set(((res.data as any[]) || []).map((r) => String(r.brand || '').trim()).filter(Boolean))
+    )
+    uniq.sort((a, b) => a.localeCompare(b, 'tr', { sensitivity: 'base' }))
+    setBrands(uniq)
   }
 
   async function saveProfile() {
@@ -220,31 +287,89 @@ export default function Home() {
     await supabase.auth.signOut()
   }
 
-  async function searchProducts(termOverride?: string) {
+  async function searchProducts() {
     setPErr(null)
     setAddProductMsg(null)
     setPLoading(true)
+    setStats({})
     try {
-      const term = (termOverride ?? q).trim()
+      const term = q.trim()
       if (!term) {
         setProducts([])
         return
       }
 
+      const or = `name.ilike.%${term}%,brand.ilike.%${term}%,category.ilike.%${term}%`
+
       const { data, error } = await supabase
         .from('products')
         .select('id,brand,name,category,image_url,created_at')
-        .or(`name.ilike.%${term}%,brand.ilike.%${term}%,category.ilike.%${term}%`)
+        .or(or)
         .order('created_at', { ascending: false })
         .limit(50)
 
       if (error) throw error
-      setProducts((data as Product[]) ?? [])
+      const list = ((data as Product[]) ?? []) as Product[]
+      setProducts(list)
+
+      // stats hesapla (avg / count / wba)
+      const ids = list.map((p) => p.id)
+      if (ids.length > 0) {
+        const ex = await supabase
+          .from('experiences')
+          .select('product_id,rating,would_buy_again')
+          .in('product_id', ids)
+          .limit(5000)
+
+        if (!ex.error) {
+          const m: Record<string, { sum: number; cnt: number; wbaYes: number; wbaCnt: number }> = {}
+          for (const row of (ex.data as any[]) || []) {
+            const pid = String(row.product_id)
+            if (!m[pid]) m[pid] = { sum: 0, cnt: 0, wbaYes: 0, wbaCnt: 0 }
+            const r10 = clamp10(typeof row.rating === 'number' ? row.rating : null)
+            if (r10 != null) {
+              m[pid].sum += r10
+              m[pid].cnt += 1
+            }
+            if (typeof row.would_buy_again === 'boolean') {
+              m[pid].wbaCnt += 1
+              if (row.would_buy_again) m[pid].wbaYes += 1
+            }
+          }
+          const out: Record<string, ProductStats> = {}
+          for (const pid of ids) {
+            const it = m[pid]
+            if (!it) {
+              out[pid] = { avg: null, count: 0, wbaRate: null }
+              continue
+            }
+            const avg = it.cnt > 0 ? it.sum / it.cnt : null
+            const wbaRate = it.wbaCnt > 0 ? Math.round((it.wbaYes / it.wbaCnt) * 100) : null
+            out[pid] = { avg, count: it.cnt, wbaRate }
+          }
+          setStats(out)
+        }
+      }
     } catch (e: any) {
       setPErr(e?.message ?? 'Ürün araması başarısız')
     } finally {
       setPLoading(false)
     }
+  }
+
+  function validateAddProductInputs() {
+    const errs: string[] = []
+    const chosenBrand = brandChoice === 'Hepsi' ? '' : brandChoice
+    const brand = (chosenBrand || '').trim()
+    const name = newName.trim()
+    const category = categoryChoice
+
+    if (!brand) errs.push('Marka seç')
+    if (!category) errs.push('Kategori seç')
+    if (category === 'Diğer' && !customCategory.trim()) errs.push('Diğer kategori yaz')
+    if (!name) errs.push('Ürün adı yaz')
+
+    return errs
   }
 
   async function addProduct() {
@@ -253,11 +378,15 @@ export default function Home() {
     try {
       if (!userId) throw new Error('Giriş gerekli')
 
-      const brand = newBrand.trim()
-      const name = newName.trim()
-      if (!brand || !name) throw new Error('Marka ve ürün adı zorunlu')
+      const vErrs = validateAddProductInputs()
+      if (vErrs.length) throw new Error(vErrs.join(' • '))
 
-      const category = categoryChoice === 'Diğer' ? (customCategory.trim() || null) : (categoryChoice as string)
+      const brand =
+        (brandChoice !== 'Hepsi' ? brandChoice : '').trim() || brandFallback.trim() // fallback sadece ürün yokken
+      const name = newName.trim()
+
+      const category =
+        categoryChoice === 'Diğer' ? (customCategory.trim() || null) : (categoryChoice as string)
 
       setAddingProduct(true)
 
@@ -274,16 +403,24 @@ export default function Home() {
       let image_url: string | null = null
       if (newPhoto) image_url = await uploadImage(newPhoto, 'products')
 
-      const ins = await supabase.from('products').insert({ brand, name, category, image_url }).select('id,brand,name,category,image_url,created_at').single()
+      const ins = await supabase
+        .from('products')
+        .insert({ brand, name, category, image_url })
+        .select('id,brand,name,category,image_url,created_at')
+        .single()
+
       if (ins.error) throw ins.error
 
       setAddProductMsg('Ürün eklendi')
-      setNewBrand('')
       setNewName('')
-      setCategoryChoice('Cilt Bakım')
+      setCategoryChoice('')
       setCustomCategory('')
       setNewPhoto(null)
 
+      // markalar güncellensin
+      await loadBrands()
+
+      // Eklenen ürün seçilsin ve arama varsa yenilensin
       setSelected(ins.data as Product)
       if (q.trim()) await searchProducts()
     } catch (e: any) {
@@ -311,7 +448,7 @@ export default function Home() {
         .insert({
           user_id: userId,
           product_id: selected.id,
-          rating,
+          rating, // 1-10
           pros: pros.trim() || null,
           cons: cons.trim() || null,
           would_buy_again: wba,
@@ -324,13 +461,14 @@ export default function Home() {
 
       setPros('')
       setCons('')
-      setRating(5)
+      setRating(8)
       setWba(false)
       setExpPhoto(null)
       setExpMsg('Deneyim eklendi')
 
       await loadRecent()
-      await loadProductReviews(selected.id)
+      // stats tazelensin (listede görünür)
+      if (q.trim()) await searchProducts()
     } catch (e: any) {
       setExpMsg(e?.message ?? 'Deneyim eklenemedi')
     } finally {
@@ -355,57 +493,108 @@ export default function Home() {
 
       if (error) throw error
       setRecent(((data as any[]) || []) as ExperienceRow[])
-    } catch (e: any) {
-      console.error('loadRecent error:', e)
+    } catch {
       setRecent([])
     } finally {
       setRecentLoading(false)
     }
   }
 
-  async function loadProductReviews(productId: string) {
+  async function loadProductReviews(product: Product) {
     setProductReviewsLoading(true)
+    setExpandedReviewIds({})
     try {
       const { data, error } = await supabase
         .from('experiences')
         .select(
           `
           id,user_id,product_id,rating,pros,cons,would_buy_again,image_url,created_at,
-          product:products!experiences_product_id_fkey(id,brand,name,category,image_url,created_at),
-          author:profiles!experiences_user_id_fkey(username,avatar_url)
+          author:profiles(username,avatar_url)
         `
         )
-        .eq('product_id', productId)
+        .eq('product_id', product.id)
         .order('created_at', { ascending: false })
-        .limit(50)
+        .limit(200)
 
       if (error) throw error
       setProductReviews(((data as any[]) || []) as ExperienceRow[])
+      setReviewsProduct(product)
+      setReviewsOpen(true)
     } catch {
       setProductReviews([])
+      setReviewsProduct(product)
+      setReviewsOpen(true)
     } finally {
       setProductReviewsLoading(false)
     }
   }
 
-  function handleQChange(v: string) {
-    setQ(v)
-    // arama kutusu tamamen temizlenirse: liste + selected + yorumlar sıfırlansın
-    if (!v.trim()) {
-      setProducts([])
-      setSelected(null)
-      setProductReviews([])
-      setPErr(null)
+  async function openUser(user_id: string, username: string, avatar_url: string | null) {
+    setUserOpen(true)
+    setUserView({ user_id, username, avatar_url })
+    setUserTab('products')
+    setUserLoading(true)
+    setUserProducts([])
+    setUserComments([])
+
+    try {
+      // Yaptığı yorumlar
+      const commentsRes = await supabase
+        .from('experiences')
+        .select(
+          `
+          id,user_id,product_id,rating,pros,cons,would_buy_again,image_url,created_at,
+          product:products(id,brand,name,category,image_url,created_at),
+          author:profiles(username,avatar_url)
+        `
+        )
+        .eq('user_id', user_id)
+        .order('created_at', { ascending: false })
+        .limit(300)
+
+      if (!commentsRes.error) {
+        const comments = (((commentsRes.data as any[]) || []) as ExperienceRow[]).map((r) => ({
+          ...r,
+          rating: clamp10(r.rating),
+        }))
+        setUserComments(comments)
+
+        // “Eklediği Ürünler” için (şemada ürünün sahibi yoksa) en güvenli yaklaşım:
+        // Kullanıcının yorum yaptığı ürünleri "Eklediği Ürünler" adı altında göstereceğiz.
+        // (DB’de products.user_id varsa ileride gerçek ekleyen bilgisini bağlarız.)
+        const byProduct: Record<string, { product: Product; experiences: ExperienceRow[] }> = {}
+        for (const r of comments) {
+          const p = r.product
+          if (!p) continue
+          if (!byProduct[p.id]) byProduct[p.id] = { product: p, experiences: [] }
+          byProduct[p.id].experiences.push(r)
+        }
+        const groups = Object.values(byProduct).sort((a, b) => {
+          const ad = a.product.created_at || ''
+          const bd = b.product.created_at || ''
+          return bd.localeCompare(ad)
+        })
+        setUserProducts(groups)
+      }
+    } finally {
+      setUserLoading(false)
     }
   }
 
-  async function selectFromRecent(p: Product) {
-    // “sanki aramış gibi”: arama kutusu dolsun, liste o ürünü göstersin, seçili olsun
-    const term = `${p.brand} ${p.name}`.trim()
-    setQ(term)
-    setProducts([p])
-    setSelected(p)
-    setPErr(null)
+  function reviewText(r: ExperienceRow) {
+    const a = r.pros?.trim()
+    const e = r.cons?.trim()
+    const parts: string[] = []
+    if (a) parts.push(`Artılar: ${a}`)
+    if (e) parts.push(`Eksiler: ${e}`)
+    if (!parts.length) return '—'
+    return parts.join('  ')
+  }
+
+  function snippet(s: string, max = 120) {
+    const t = s.replace(/\s+/g, ' ').trim()
+    if (t.length <= max) return { text: t, cut: false }
+    return { text: t.slice(0, max).trimEnd() + '…', cut: true }
   }
 
   // UI
@@ -426,7 +615,7 @@ export default function Home() {
     )
   }
 
-  const showSelectedReviews = !!selected
+  const effectiveBrands = ['Hepsi', ...brands]
 
   return (
     <div className="wrap">
@@ -439,7 +628,6 @@ export default function Home() {
               className="logo"
               src="/logo.png"
               alt="ARAMIZDA"
-              style={{ transform: 'scale(1.12)' }}
               onError={(e) => {
                 ;(e.currentTarget as any).style.display = 'none'
               }}
@@ -447,10 +635,10 @@ export default function Home() {
             <div className="word">ARAMIZDA</div>
           </div>
 
-          <div className="right">
+          <div className="rightCol">
             <button
               type="button"
-              className="userPill"
+              className="userPill userPillPremium"
               onClick={() => {
                 setUsernameDraft(profile?.username ?? '')
                 setAvatarDraft(null)
@@ -462,7 +650,7 @@ export default function Home() {
               <div className="uname">{profile?.username || 'Profil'}</div>
             </button>
 
-            <button className="btn ghost btnSm" onClick={signOut}>
+            <button className="btn ghost btnSm btnTiny" onClick={signOut}>
               Çıkış
             </button>
           </div>
@@ -474,19 +662,19 @@ export default function Home() {
             <div className="muted">Bu isim yorumlarda görünecek</div>
 
             <div className="field">
-              <div className="label">Kullanıcı adı</div>
+              <div className="label">{titleCaseTR('kullanıcı adı')}</div>
               <input className="input" value={usernameDraft} onChange={(e) => setUsernameDraft(e.target.value)} placeholder="ör: ulas, gizem" />
             </div>
 
             <div className="field">
-              <div className="label">Profil fotoğrafı (opsiyonel)</div>
+              <div className="label">{titleCaseTR('profil fotoğrafı (opsiyonel)')}</div>
               <input
                 className="file"
                 type="file"
                 accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
                 onChange={(e) => setAvatarDraft(e.target.files?.[0] ?? null)}
               />
-              <div className="muted small">5MB altı</div>
+              <div className="muted small">5 MB Altı</div>
             </div>
 
             {profileErr ? <div className="err">{profileErr}</div> : null}
@@ -496,7 +684,7 @@ export default function Home() {
             </button>
           </div>
         ) : (
-          <main className="grid">
+          <main className="grid4">
             {/* 1) Ürün Ara */}
             <section className="card tall">
               <div className="h2">Ürün Ara</div>
@@ -508,7 +696,7 @@ export default function Home() {
                 }}
               >
                 <div className="row">
-                  <input className="input" value={q} onChange={(e) => handleQChange(e.target.value)} placeholder="ör: bee beauty" />
+                  <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="ör: bee beauty" />
                   <button className="btn btnSm" type="submit" disabled={pLoading}>
                     {pLoading ? '…' : 'Ara'}
                   </button>
@@ -538,35 +726,65 @@ export default function Home() {
                     ) : null}
                   </div>
                 ) : (
-                  products.map((p) => (
-                    <button
-                      key={p.id}
-                      className={`item ${selected?.id === p.id ? 'active' : ''}`}
-                      onClick={() => setSelected(p)}
-                    >
-                      {p.image_url ? (
-                        <img
-                          className="thumb clickable"
-                          src={p.image_url}
-                          alt=""
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setLightboxAlt(`${p.brand} — ${p.name}`)
-                            setLightboxUrl(p.image_url!)
-                          }}
-                        />
-                      ) : (
-                        <div className="thumb ph" />
-                      )}
+                  products.map((p) => {
+                    const st = stats[p.id] || { avg: null, count: 0, wbaRate: null }
+                    const wbaText =
+                      st.wbaRate == null
+                        ? 'Tekrar Alma Oranı: —'
+                        : `Tekrar Alma Oranı: % ${st.wbaRate}`
 
-                      <div className="mid">
-                        <div className="t">
-                          {p.brand} — {p.name}
-                        </div>
-                        <div className="muted small">{p.category || 'Kategori yok'}</div>
+                    return (
+                      <div key={p.id} className={`itemWrap ${selected?.id === p.id ? 'active' : ''}`}>
+                        <button
+                          className="item"
+                          onClick={() => {
+                            setSelected(p)
+                          }}
+                        >
+                          {p.image_url ? (
+                            <img
+                              className="thumb clickable"
+                              src={p.image_url}
+                              alt=""
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setLightboxAlt(`${p.brand} — ${p.name}`)
+                                setLightboxUrl(p.image_url!)
+                              }}
+                            />
+                          ) : (
+                            <div className="thumb ph" />
+                          )}
+
+                          <div className="mid">
+                            <div className="t">
+                              {p.brand} — {p.name}
+                            </div>
+
+                            <div className="muted small line2">
+                              <span>{p.category || 'Kategori yok'}</span>
+                              <span className="dot">•</span>
+                              <span>Ortalama Puan: {formatAvg(st.avg)}</span>
+                              <span className="dot">•</span>
+                              <button
+                                type="button"
+                                className="linkBtn"
+                                onClick={(e) => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  loadProductReviews(p)
+                                }}
+                              >
+                                {st.count} Yorum
+                              </button>
+                            </div>
+
+                            <div className="muted small line3">{wbaText}</div>
+                          </div>
+                        </button>
                       </div>
-                    </button>
-                  ))
+                    )
+                  })
                 )}
               </div>
             </section>
@@ -577,9 +795,9 @@ export default function Home() {
               <div className="muted small">{selectedLabel}</div>
 
               <div className="field">
-                <div className="label">Puan</div>
+                <div className="label">{titleCaseTR('puan')}</div>
                 <select className="input" value={rating} onChange={(e) => setRating(parseInt(e.target.value, 10))}>
-                  {[1, 2, 3, 4, 5].map((n) => (
+                  {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
                     <option key={n} value={n}>
                       {n}
                     </option>
@@ -588,12 +806,12 @@ export default function Home() {
               </div>
 
               <div className="field">
-                <div className="label">Artılar</div>
+                <div className="label">{titleCaseTR('artılar')}</div>
                 <textarea className="ta" value={pros} onChange={(e) => setPros(e.target.value)} />
               </div>
 
               <div className="field">
-                <div className="label">Eksiler</div>
+                <div className="label">{titleCaseTR('eksiler')}</div>
                 <textarea className="ta" value={cons} onChange={(e) => setCons(e.target.value)} />
               </div>
 
@@ -603,44 +821,78 @@ export default function Home() {
               </label>
 
               <div className="field">
-                <div className="label">Deneyim fotoğrafı (opsiyonel)</div>
+                <div className="label">{titleCaseTR('deneyim fotoğrafı (opsiyonel)')}</div>
                 <input
                   className="file"
                   type="file"
                   accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
                   onChange={(e) => setExpPhoto(e.target.files?.[0] ?? null)}
                 />
-                <div className="muted small">5MB altı</div>
+                <div className="muted small">5 MB Altı</div>
               </div>
 
               {expMsg ? <div className={expMsg.includes('eklendi') ? 'ok' : 'err'}>{expMsg}</div> : null}
 
-              <button className="btn btnSm" disabled={!selected || addingExp} onClick={addExperience}>
+              <button className="btn btnSm boldBtn" disabled={!selected || addingExp} onClick={addExperience}>
                 {addingExp ? 'Gönderiliyor…' : 'Gönder'}
               </button>
             </section>
 
-            {/* 3) Son Deneyimler / Bu ürünün yorumları (ayrı bölüm) */}
+            {/* 3) Son Deneyimler */}
             <section className="card tall">
-              <div className="h2">{showSelectedReviews ? 'Bu ürünün yorumları' : 'Son Deneyimler'}</div>
+              <div className="h2">Son Deneyimler</div>
 
-              {showSelectedReviews ? (
-                productReviewsLoading ? (
-                  <div className="muted">Yükleniyor…</div>
-                ) : productReviews.length === 0 ? (
-                  <div className="muted">Bu ürüne henüz yorum yok</div>
-                ) : (
-                  <div className="recent">
-                    {productReviews.map((r) => (
-                      <div className="r" key={r.id}>
+              {recentLoading ? (
+                <div className="muted">Yükleniyor…</div>
+              ) : recent.length === 0 ? (
+                <div className="muted small"> </div>
+              ) : (
+                <div className="recent">
+                  {recent.map((r) => {
+                    const r10 = clamp10(r.rating)
+                    const badge =
+                      r.would_buy_again === true ? <span className="badge2 okB">✔ Tekrar Alırım</span> : <span className="badge2 badB">✖ Tekrar Almam</span>
+
+                    return (
+                      <div
+                        className="r"
+                        key={r.id}
+                        onClick={() => {
+                          // deneyimde ürün adını tıklayınca ürün seçilsin ve arama gibi listede görünsün
+                          if (r.product) {
+                            setQ(`${r.product.brand} ${r.product.name}`)
+                            // searchProducts form submit gibi davran
+                            setTimeout(() => {
+                              searchProducts().then(() => setSelected(r.product as Product))
+                            }, 0)
+                          }
+                        }}
+                        role="button"
+                        tabIndex={0}
+                      >
                         <div className="rHead">
-                          {r.author?.avatar_url ? <img className="avSm" src={r.author.avatar_url} alt="" /> : <div className="avSm ph" />}
-                          <div className="rMeta">
+                          <button
+                            type="button"
+                            className="userInline"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              openUser(r.user_id, r.author?.username || 'Kullanıcı', r.author?.avatar_url || null)
+                            }}
+                          >
+                            {r.author?.avatar_url ? <img className="avSm" src={r.author.avatar_url} alt="" /> : <div className="avSm ph" />}
                             <div className="rUser">{r.author?.username || 'Kullanıcı'}</div>
+                          </button>
+
+                          <div className="rMeta">
                             <div className="muted small">{new Date(r.created_at).toLocaleString('tr-TR')}</div>
                           </div>
-                          <div className="badge">{typeof r.rating === 'number' ? `${r.rating}/5` : '-'}</div>
+
+                          <div className="badge">
+                            {typeof r10 === 'number' ? `${r10}/10` : '—'} {badge}
+                          </div>
                         </div>
+
+                        {r.product ? <div className="muted small pLine">{r.product.brand} — {r.product.name}</div> : null}
 
                         {r.pros ? (
                           <div className="pill okP">
@@ -658,71 +910,16 @@ export default function Home() {
                             className="rImg clickable"
                             src={r.image_url}
                             alt=""
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.stopPropagation()
                               setLightboxAlt('Deneyim fotoğrafı')
                               setLightboxUrl(r.image_url!)
                             }}
                           />
                         ) : null}
                       </div>
-                    ))}
-                  </div>
-                )
-              ) : recentLoading ? (
-                <div className="muted">Yükleniyor…</div>
-              ) : recent.length === 0 ? (
-                <div className="muted">Henüz yok</div>
-              ) : (
-                <div className="recent">
-                  {recent.map((r) => (
-                    <div className="r" key={r.id}>
-                      <div className="rHead">
-                        {r.author?.avatar_url ? <img className="avSm" src={r.author.avatar_url} alt="" /> : <div className="avSm ph" />}
-                        <div className="rMeta">
-                          <div className="rUser">{r.author?.username || 'Kullanıcı'}</div>
-                          <div className="muted small">{new Date(r.created_at).toLocaleString('tr-TR')}</div>
-                        </div>
-                        <div className="badge">{typeof r.rating === 'number' ? `${r.rating}/5` : '-'}</div>
-                      </div>
-
-                      {r.product ? (
-                        <button
-                          type="button"
-                          className="prodLink"
-                          onClick={() => selectFromRecent(r.product!)}
-                          title="Bu ürünü seç"
-                        >
-                          {r.product.brand} — {r.product.name}
-                          {r.product.category ? ` • ${r.product.category}` : ''}
-                        </button>
-                      ) : (
-                        <div className="muted small">Ürün</div>
-                      )}
-
-                      {r.pros ? (
-                        <div className="pill okP">
-                          <b>Artılar:</b> {r.pros}
-                        </div>
-                      ) : null}
-                      {r.cons ? (
-                        <div className="pill badP">
-                          <b>Eksiler:</b> {r.cons}
-                        </div>
-                      ) : null}
-
-                      {r.image_url ? (
-                        <img
-                          className="rImg clickable"
-                          src={r.image_url}
-                          alt=""
-                          onClick={() => {
-                            setLightboxAlt('Deneyim fotoğrafı')
-                            setLightboxUrl(r.image_url!)
-                          }}
-                        />
-                      ) : null}
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </section>
@@ -732,18 +929,32 @@ export default function Home() {
               <div className="h2">Ürün Ekle</div>
 
               <div className="field">
-                <div className="label">Marka</div>
-                <input className="input" value={newBrand} onChange={(e) => setNewBrand(e.target.value)} />
+                <div className="label">{titleCaseTR('marka')}</div>
+                {brands.length > 0 ? (
+                  <select className="input" value={brandChoice} onChange={(e) => setBrandChoice(e.target.value)}>
+                    {effectiveBrands.map((b) => (
+                      <option key={b} value={b}>
+                        {b}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <>
+                    <div className="muted small">Henüz marka yok. İlk ürünü eklemek için bir marka yaz.</div>
+                    <input className="input" value={brandFallback} onChange={(e) => setBrandFallback(e.target.value)} placeholder="ör: essence" />
+                  </>
+                )}
               </div>
 
               <div className="field">
-                <div className="label">Ürün adı</div>
+                <div className="label">{titleCaseTR('ürün adı')}</div>
                 <input className="input" value={newName} onChange={(e) => setNewName(e.target.value)} />
               </div>
 
               <div className="field">
-                <div className="label">Kategori</div>
+                <div className="label">{titleCaseTR('kategori')}</div>
                 <select className="input" value={categoryChoice} onChange={(e) => setCategoryChoice(e.target.value as any)}>
+                  <option value="">Kategori Seç</option>
                   {CATEGORY_OPTIONS.map((c) => (
                     <option key={c} value={c}>
                       {c}
@@ -754,32 +965,38 @@ export default function Home() {
 
               {categoryChoice === 'Diğer' ? (
                 <div className="field">
-                  <div className="label">Diğer kategori</div>
+                  <div className="label">{titleCaseTR('diğer kategori')}</div>
                   <input className="input" value={customCategory} onChange={(e) => setCustomCategory(e.target.value)} placeholder="ör: Anne&Bebek" />
                 </div>
               ) : null}
 
               <div className="field">
-                <div className="label">Ürün fotoğrafı (opsiyonel)</div>
+                <div className="label">{titleCaseTR('ürün fotoğrafı (opsiyonel)')}</div>
                 <input
                   className="file"
                   type="file"
                   accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
                   onChange={(e) => setNewPhoto(e.target.files?.[0] ?? null)}
                 />
-                <div className="muted small">5MB altı</div>
+                <div className="muted small">5 MB Altı</div>
               </div>
 
               <button className="btn btnSm" onClick={addProduct} disabled={addingProduct}>
                 {addingProduct ? 'Ekleniyor…' : 'Ekle'}
               </button>
+
+              <div className="divider" />
+
+              <div className="muted small">
+                Marka ve kategori seçmeden ürün eklenmez. Kategori zorunlu.
+              </div>
             </section>
           </main>
         )}
 
         <div className="foot muted small">© ARAMIZDA</div>
 
-        {/* Profile modal */}
+        {/* Profile modal (kendi profilin) */}
         {profileOpen ? (
           <div className="pm" onClick={() => setProfileOpen(false)} role="dialog" aria-modal="true">
             <div className="pmInner" onClick={(e) => e.stopPropagation()}>
@@ -790,19 +1007,19 @@ export default function Home() {
               <div className="h2">Profil</div>
 
               <div className="field">
-                <div className="label">Kullanıcı adı</div>
+                <div className="label">{titleCaseTR('kullanıcı adı')}</div>
                 <input className="input" value={usernameDraft} onChange={(e) => setUsernameDraft(e.target.value)} />
               </div>
 
               <div className="field">
-                <div className="label">Profil fotoğrafı</div>
+                <div className="label">{titleCaseTR('profil fotoğrafı')}</div>
                 <input
                   className="file"
                   type="file"
                   accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
                   onChange={(e) => setAvatarDraft(e.target.files?.[0] ?? null)}
                 />
-                <div className="muted small">5MB altı</div>
+                <div className="muted small">5 MB Altı</div>
               </div>
 
               {profileErr ? <div className="err">{profileErr}</div> : null}
@@ -827,7 +1044,164 @@ export default function Home() {
           </div>
         ) : null}
 
-        {/* Lightbox */}
+        {/* Reviews Modal */}
+        {reviewsOpen ? (
+          <div className="rm" onClick={() => setReviewsOpen(false)} role="dialog" aria-modal="true">
+            <div className="rmInner" onClick={(e) => e.stopPropagation()}>
+              <button className="rmClose" onClick={() => setReviewsOpen(false)} aria-label="Kapat">
+                ×
+              </button>
+
+              <div className="rmTop">
+                <div className="h2 rmTitle">
+                  {reviewsProduct ? `${reviewsProduct.brand} — ${reviewsProduct.name}` : 'Yorumlar'}
+                </div>
+                <div className="muted small">
+                  Yorumlar en son tarihliden başlar
+                </div>
+              </div>
+
+              {productReviewsLoading ? (
+                <div className="muted">Yükleniyor…</div>
+              ) : productReviews.length === 0 ? (
+                <div className="muted small"> </div>
+              ) : (
+                <div className="rmList">
+                  {productReviews.map((r) => {
+                    const rid = r.id
+                    const expanded = !!expandedReviewIds[rid]
+                    const r10 = clamp10(r.rating)
+                    const full = reviewText(r)
+                    const sn = snippet(full, 120)
+
+                    const badge =
+                      r.would_buy_again === true ? <span className="badge2 okB">✔ Tekrar Alırım</span> : <span className="badge2 badB">✖ Tekrar Almam</span>
+
+                    return (
+                      <button
+                        key={r.id}
+                        type="button"
+                        className="rmRow"
+                        onClick={() => setExpandedReviewIds((x) => ({ ...x, [rid]: !x[rid] }))}
+                      >
+                        <div className="rmLine1">
+                          <button
+                            type="button"
+                            className="userInline"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              openUser(r.user_id, r.author?.username || 'Kullanıcı', r.author?.avatar_url || null)
+                            }}
+                          >
+                            {r.author?.avatar_url ? <img className="avSm" src={r.author.avatar_url} alt="" /> : <div className="avSm ph" />}
+                            <b className="rmUser">{r.author?.username || 'Kullanıcı'}</b>
+                          </button>
+
+                          <div className="rmMetaRight">
+                            <span className="rmRate">{typeof r10 === 'number' ? `Puan: ${r10}/10` : 'Puan: —'}</span>
+                            {badge}
+                          </div>
+                        </div>
+
+                        <div className="rmLine2">
+                          {expanded ? full : sn.text}
+                        </div>
+
+                        <div className="rmLine3 muted small">
+                          {new Date(r.created_at).toLocaleString('tr-TR')}
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : null}
+
+        {/* User Modal */}
+        {userOpen && userView ? (
+          <div className="um" onClick={() => setUserOpen(false)} role="dialog" aria-modal="true">
+            <div className="umInner" onClick={(e) => e.stopPropagation()}>
+              <button className="umClose" onClick={() => setUserOpen(false)} aria-label="Kapat">
+                ×
+              </button>
+
+              <div className="umHead">
+                <div className="umUserBox">
+                  {userView.avatar_url ? <img className="umAv" src={userView.avatar_url} alt="" /> : <div className="umAv ph" />}
+                  <div className="umName"><b>{userView.username}</b></div>
+                </div>
+
+                <div className="umTabs">
+                  <button type="button" className={`tab ${userTab === 'products' ? 'active' : ''}`} onClick={() => setUserTab('products')}>
+                    Eklediği Ürünler
+                  </button>
+                  <button type="button" className={`tab ${userTab === 'comments' ? 'active' : ''}`} onClick={() => setUserTab('comments')}>
+                    Yaptığı Yorumlar
+                  </button>
+                </div>
+              </div>
+
+              {userLoading ? (
+                <div className="muted">Yükleniyor…</div>
+              ) : userTab === 'products' ? (
+                userProducts.length === 0 ? (
+                  <div className="muted small"> </div>
+                ) : (
+                  <div className="umList">
+                    {userProducts.map((g) => (
+                      <div key={g.product.id} className="umCard">
+                        <div className="umProd">
+                          <div className="t">{g.product.brand} — {g.product.name}</div>
+                          <div className="muted small">{g.product.category || ''}</div>
+                        </div>
+                        <div className="umExpList">
+                          {g.experiences.map((r) => {
+                            const r10 = clamp10(r.rating)
+                            return (
+                              <div key={r.id} className="umExp">
+                                <div className="muted small">
+                                  {typeof r10 === 'number' ? `Puan: ${r10}/10` : 'Puan: —'}{' '}
+                                  {r.would_buy_again === true ? '• ✔ Tekrar Alırım' : '• ✖ Tekrar Almam'}
+                                </div>
+                                {r.pros ? <div className="pill okP"><b>Artılar:</b> {r.pros}</div> : null}
+                                {r.cons ? <div className="pill badP"><b>Eksiler:</b> {r.cons}</div> : null}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )
+              ) : (
+                userComments.length === 0 ? (
+                  <div className="muted small"> </div>
+                ) : (
+                  <div className="umList">
+                    {userComments.map((r) => {
+                      const r10 = clamp10(r.rating)
+                      return (
+                        <div key={r.id} className="umCard">
+                          <div className="muted small">
+                            {r.product ? `${r.product.brand} — ${r.product.name}` : 'Ürün'} •{' '}
+                            {typeof r10 === 'number' ? `Puan: ${r10}/10` : 'Puan: —'} •{' '}
+                            {r.would_buy_again === true ? '✔ Tekrar Alırım' : '✖ Tekrar Almam'}
+                          </div>
+                          {r.pros ? <div className="pill okP"><b>Artılar:</b> {r.pros}</div> : null}
+                          {r.cons ? <div className="pill badP"><b>Eksiler:</b> {r.cons}</div> : null}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              )}
+            </div>
+          </div>
+        ) : null}
+
+        {/* Lightbox (images) */}
         {lightboxUrl ? (
           <div className="lb" onClick={() => setLightboxUrl(null)} role="dialog" aria-modal="true">
             <div className="lbInner" onClick={(e) => e.stopPropagation()}>
@@ -867,7 +1241,7 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
     linear-gradient(135deg, #4a1677, #c03a9f);
 }
 .center{ min-height: calc(100vh - 36px); display:grid; place-items:center; }
-.app{ max-width: 1380px; margin:0 auto; display:flex; flex-direction:column; gap: 14px; }
+.app{ max-width: 1500px; margin:0 auto; display:flex; flex-direction:column; gap: 14px; }
 
 .topbar{
   display:flex;
@@ -897,18 +1271,25 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
 }
 .word{ font-weight: 900; font-size: 26px; letter-spacing: .22em; text-transform: uppercase; }
 
-.right{ display:flex; align-items:center; gap: 16px; }
+.rightCol{
+  display:flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
 
 .userPill{
   display:flex; align-items:center; gap:12px;
-  height: 46px;
+  height: 44px;
   padding: 0 16px;
-  border-radius: 999px;
-  border:1px solid var(--stroke);
-  background: rgba(0,0,0,.18);
-  color: var(--text);
-  cursor: pointer;
+  border-radius: 16px;
+  border:1px solid rgba(255,255,255,.28);
+  cursor:pointer;
+  background: linear-gradient(145deg, rgba(0,0,0,.55), rgba(0,0,0,.35));
+  color: #ffffff;
+  box-shadow: 0 12px 30px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.06);
 }
+.userPillPremium{ font-weight: 900; }
 .av{ width: 30px; height: 30px; border-radius: 999px; object-fit: cover; border:1px solid rgba(255,255,255,.22); }
 .av.ph{ background: rgba(255,255,255,.14); }
 .uname{ font-weight: 900; font-size: 13px; }
@@ -936,6 +1317,8 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
 }
 .btn:disabled{ opacity:.6; cursor:not-allowed; transform:none; }
 .btnSm{ height: 46px; display:inline-flex; align-items:center; justify-content:center; padding: 0 18px; }
+.btnTiny{ height: 38px; padding: 0 14px; border-radius: 14px; font-size: 12px; }
+.boldBtn{ font-weight: 900; }
 
 .card{
   padding: 14px; border-radius: var(--r);
@@ -951,7 +1334,7 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
 .muted{ color: var(--muted); }
 .small{ font-size: 12px; }
 
-.grid{
+.grid4{
   display:grid;
   grid-template-columns: 1fr 1fr 1fr 1fr;
   gap: 14px;
@@ -960,7 +1343,14 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
 .tall{ min-height: 520px; }
 
 .row{ display:flex; gap:10px; align-items:center; margin-bottom: 10px; }
-.label{ font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+
+.label{
+  font-size: 12px;
+  color: var(--text);
+  margin-bottom: 6px;
+  font-weight: 900;
+}
+
 .field{ margin-top: 10px; }
 
 .input,.ta,.file, select.input{
@@ -994,7 +1384,12 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   display:flex; flex-direction:column; gap:10px;
   max-height: 380px; overflow:auto; padding-right: 2px;
 }
+
+.itemWrap{ border-radius: var(--r2); }
+.itemWrap.active .item{ border-color: rgba(255,255,255,.28); background: rgba(255,255,255,.08); }
+
 .item{
+  width:100%;
   display:flex; gap:12px; align-items:center;
   border-radius: var(--r2);
   border:1px solid rgba(255,255,255,.14);
@@ -1004,11 +1399,26 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   color: var(--text);
   text-align:left;
 }
-.item.active{ border-color: rgba(255,255,255,.28); background: rgba(255,255,255,.08); }
+
 .thumb{ width:44px; height:44px; border-radius: 14px; object-fit: cover; border:1px solid rgba(255,255,255,.18); }
 .thumb.ph{ background: rgba(255,255,255,.10); }
 .mid{ flex:1; min-width:0; }
 .t{ font-weight: 900; }
+.line2,.line3{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.dot{ opacity:.7; }
+
+.linkBtn{
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  color: rgba(255,255,255,.92);
+  font-weight: 900;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+}
+
 .check{ display:flex; align-items:center; gap:10px; margin-top: 10px; font-weight: 900; }
 
 .err{
@@ -1027,33 +1437,60 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
 }
 
 .divider{ height: 1px; background: rgba(255,255,255,.16); margin: 14px 0; }
+
 .recent{ display:flex; flex-direction:column; gap: 10px; max-height: 360px; overflow:auto; padding-right: 2px; }
-.r{ border:1px solid rgba(255,255,255,.14); background: rgba(0,0,0,.14); border-radius: var(--r2); padding: 10px; }
-.rHead{ display:flex; align-items:center; gap:10px; margin-bottom: 8px; }
+
+.r{
+  border:1px solid rgba(255,255,255,.14);
+  background: rgba(0,0,0,.14);
+  border-radius: var(--r2);
+  padding: 10px;
+  cursor: pointer;
+}
+.rHead{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom: 8px; }
+
+.userInline{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  color: var(--text);
+  text-align:left;
+}
 .avSm{ width:28px; height:28px; border-radius:999px; object-fit:cover; border:1px solid rgba(255,255,255,.22); }
 .avSm.ph{ background: rgba(255,255,255,.12); }
-.rMeta{ flex:1; min-width:0; }
 .rUser{ font-weight: 900; }
-.badge{ font-weight: 900; padding: 6px 10px; border-radius: 999px; background: rgba(255,255,255,.10); border:1px solid rgba(255,255,255,.18); }
+
+.rMeta{ flex:1; min-width:0; }
+
+.badge{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  font-weight: 900;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.10);
+  border:1px solid rgba(255,255,255,.18);
+}
+.badge2{
+  font-weight: 900;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border:1px solid rgba(255,255,255,.18);
+  background: rgba(255,255,255,.10);
+}
+.okB{ background: rgba(70,255,160,.12); }
+.badB{ background: rgba(255,90,90,.12); }
+
+.pLine{ margin-top: 2px; }
 
 .pill{ margin-top: 8px; padding: 8px 10px; border-radius: 14px; border:1px solid rgba(255,255,255,.14); }
 .okP{ background: rgba(70,255,160,.10); }
 .badP{ background: rgba(255,90,90,.10); }
-
-.prodLink{
-  appearance:none;
-  border: none;
-  background: transparent;
-  padding: 0;
-  margin: 2px 0 6px;
-  color: rgba(255,255,255,.88);
-  font-weight: 900;
-  text-align: left;
-  cursor: pointer;
-  text-decoration: underline;
-  text-decoration-color: rgba(255,255,255,.28);
-  text-underline-offset: 3px;
-}
 
 .rImg{ width: 100%; max-height: 220px; object-fit: cover; border-radius: 14px; border:1px solid rgba(255,255,255,.18); margin-top: 10px; }
 
@@ -1112,7 +1549,7 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   text-align: center;
 }
 
-/* Profile Modal */
+/* Profile Modal (kendi profilin) */
 .pm{
   position: fixed;
   inset: 0;
@@ -1146,8 +1583,140 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   cursor: pointer;
 }
 
-@media(max-width: 1100px){
-  .grid{ grid-template-columns: 1fr; }
+/* Reviews Modal (pembe üzerine beyaz) */
+.rm{
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(255,255,255,.35);
+  backdrop-filter: blur(10px);
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+.rmInner{
+  width: min(860px, 96vw);
+  max-height: 90vh;
+  overflow: auto;
+  border-radius: 22px;
+  border: 1px solid rgba(255,255,255,.55);
+  background:
+    radial-gradient(900px 500px at 20% 0%, rgba(255,255,255,.65), rgba(255,255,255,.35)),
+    linear-gradient(135deg, rgba(255,255,255,.78), rgba(255,255,255,.55));
+  box-shadow: 0 30px 90px rgba(0,0,0,.35);
+  padding: 16px;
+  position: relative;
+  color: #1a1020;
+}
+.rmInner .muted{ color: rgba(0,0,0,.55); }
+.rmClose{
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid rgba(0,0,0,.12);
+  background: rgba(255,255,255,.75);
+  color: #111;
+  font-size: 22px;
+  cursor: pointer;
+}
+.rmTop{ margin-bottom: 10px; }
+.rmTitle{ color: #1a1020; }
+.rmList{ display:flex; flex-direction:column; gap:10px; padding-top: 8px; }
+.rmRow{
+  width:100%;
+  text-align:left;
+  border-radius: 18px;
+  border: 1px solid rgba(0,0,0,.10);
+  background: rgba(255,255,255,.70);
+  padding: 12px;
+  cursor: pointer;
+}
+.rmLine1{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom: 8px;
+}
+.rmUser{ font-weight: 900; }
+.rmMetaRight{ display:flex; align-items:center; gap:10px; }
+.rmRate{ font-weight: 900; }
+.rmLine2{ color: rgba(0,0,0,.78); line-height: 1.35; }
+.rmLine3{ margin-top: 8px; }
+
+/* User Modal */
+.um{
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0,0,0,.45);
+  backdrop-filter: blur(10px);
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+.umInner{
+  width: min(980px, 96vw);
+  max-height: 90vh;
+  overflow: auto;
+  border-radius: 22px;
+  border: 1px solid rgba(255,255,255,.18);
+  background: rgba(15, 5, 20, .70);
+  box-shadow: 0 30px 90px rgba(0,0,0,.55);
+  padding: 16px;
+  position: relative;
+}
+.umClose{
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.22);
+  background: rgba(0,0,0,.35);
+  color: #fff;
+  font-size: 22px;
+  cursor: pointer;
+}
+.umHead{ display:flex; flex-direction:column; gap:12px; margin-bottom: 12px; }
+.umUserBox{ display:flex; align-items:center; gap:12px; }
+.umAv{ width: 44px; height: 44px; border-radius: 999px; object-fit: cover; border:1px solid rgba(255,255,255,.22); }
+.umAv.ph{ background: rgba(255,255,255,.14); }
+.umName{ font-size: 16px; }
+.umTabs{ display:flex; gap:10px; }
+.tab{
+  border:1px solid rgba(255,255,255,.18);
+  background: rgba(255,255,255,.10);
+  color: rgba(255,255,255,.92);
+  padding: 10px 12px;
+  border-radius: 14px;
+  cursor: pointer;
+  font-weight: 900;
+}
+.tab.active{
+  background: rgba(255,255,255,.18);
+  border-color: rgba(255,255,255,.28);
+}
+.umList{ display:flex; flex-direction:column; gap:10px; }
+.umCard{
+  border-radius: 18px;
+  border:1px solid rgba(255,255,255,.14);
+  background: rgba(0,0,0,.14);
+  padding: 12px;
+}
+.umProd{ margin-bottom: 10px; }
+.umExpList{ display:flex; flex-direction:column; gap:10px; }
+.umExp{ }
+
+@media(max-width: 1300px){
+  .grid4{ grid-template-columns: 1fr 1fr; }
+}
+@media(max-width: 900px){
+  .grid4{ grid-template-columns: 1fr; }
   .tall{ min-height: auto; }
   .list,.recent{ max-height: 280px; }
   .logo{ width: 96px; height: 96px; }
