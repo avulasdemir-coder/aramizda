@@ -720,7 +720,7 @@ export default function Home() {
                         </div>
 
                         {r.pros ? <div className="pill okP">(+)&nbsp;{r.pros}</div> : null}
-{r.cons ? <div className="pill badP">(-)&nbsp;{r.cons}</div> : null}
+                        {r.cons ? <div className="pill badP">(-)&nbsp;{r.cons}</div> : null}
 
                         {r.image_url ? (
                           <img
