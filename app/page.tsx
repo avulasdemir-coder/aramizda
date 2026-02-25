@@ -35,6 +35,12 @@ type ExperienceRow = {
   author?: { username: string; avatar_url: string | null } | null
 }
 
+type ProductStats = {
+  count: number
+  avg: number | null
+  repurchasePct: number | null
+}
+
 function safeExt(fileName: string) {
   const p = fileName.split('.')
   const ext = p.length > 1 ? p[p.length - 1].toLowerCase() : 'jpg'
@@ -46,7 +52,7 @@ function uid() {
 
 function validateImage(file: File) {
   const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']
-  const maxSize = 5 * 1024 * 1024 // 5MB
+  const maxSize = 5 * 1024 * 1024
   if (!allowed.includes(file.type)) throw new Error('Sadece JPG, PNG, WEBP veya HEIC/HEIF yükleyebilirsin')
   if (file.size > maxSize) throw new Error('Fotoğraf en fazla 5MB olabilir')
 }
@@ -87,6 +93,9 @@ export default function Home() {
   const [pLoading, setPLoading] = useState(false)
   const [pErr, setPErr] = useState<string | null>(null)
 
+  // stats for list
+  const [productStats, setProductStats] = useState<Record<string, ProductStats>>({})
+
   // add product
   const [newBrand, setNewBrand] = useState('')
   const [newName, setNewName] = useState('')
@@ -97,10 +106,10 @@ export default function Home() {
   const [addProductMsg, setAddProductMsg] = useState<string | null>(null)
 
   // add experience
-  const [rating, setRating] = useState(5)
+  const [rating, setRating] = useState(8)
   const [pros, setPros] = useState('')
   const [cons, setCons] = useState('')
-  const [wba, setWba] = useState(false) // default boş
+  const [wba, setWba] = useState(false)
   const [expPhoto, setExpPhoto] = useState<File | null>(null)
   const [addingExp, setAddingExp] = useState(false)
   const [expMsg, setExpMsg] = useState<string | null>(null)
@@ -109,9 +118,12 @@ export default function Home() {
   const [recent, setRecent] = useState<ExperienceRow[]>([])
   const [recentLoading, setRecentLoading] = useState(false)
 
-  // selected product reviews
+  // selected product reviews (for modal)
   const [productReviews, setProductReviews] = useState<ExperienceRow[]>([])
   const [productReviewsLoading, setProductReviewsLoading] = useState(false)
+  const [reviewsOpen, setReviewsOpen] = useState(false)
+  const [reviewsProduct, setReviewsProduct] = useState<Product | null>(null)
+  const [expandedReviewIds, setExpandedReviewIds] = useState<Record<string, boolean>>({})
 
   // lightbox
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
@@ -119,6 +131,13 @@ export default function Home() {
 
   // profile modal
   const [profileOpen, setProfileOpen] = useState(false)
+
+  // user modal (from review username)
+  const [userOpen, setUserOpen] = useState(false)
+  const [userModal, setUserModal] = useState<{ user_id: string; username: string; avatar_url: string | null } | null>(null)
+  const [userTab, setUserTab] = useState<'products' | 'reviews'>('products')
+  const [userExperiences, setUserExperiences] = useState<ExperienceRow[]>([])
+  const [userLoading, setUserLoading] = useState(false)
 
   const needsUsername = !!userId && (!profile?.username || profile.username.trim().length < 2)
 
@@ -145,6 +164,7 @@ export default function Home() {
       setProducts([])
       setRecent([])
       setProductReviews([])
+      setProductStats({})
       if (uid) {
         loadProfile(uid)
         loadRecent()
@@ -157,21 +177,9 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // seçili ürün değişince: o ürünün yorumlarını çek
-  useEffect(() => {
-    if (!userId) return
-    if (!selected?.id) {
-      setProductReviews([])
-      return
-    }
-    loadProductReviews(selected.id)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected?.id, userId])
-
   async function loadProfile(uid: string) {
     setProfileErr(null)
     const res = await supabase.from('profiles').select('user_id,username,avatar_url,is_admin').eq('user_id', uid).maybeSingle()
-
     if (res.error) {
       setProfile(null)
       setProfileErr(res.error.message)
@@ -220,14 +228,63 @@ export default function Home() {
     await supabase.auth.signOut()
   }
 
-  async function searchProducts() {
+  async function computeStats(productIds: string[]) {
+    if (productIds.length === 0) {
+      setProductStats({})
+      return
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('experiences')
+        .select('product_id,rating,would_buy_again')
+        .in('product_id', productIds)
+        .limit(5000)
+
+      if (error) throw error
+
+      const map: Record<string, { count: number; sum: number; nRated: number; repYes: number }> = {}
+      for (const row of (data as any[]) || []) {
+        const pid = row.product_id as string
+        if (!map[pid]) map[pid] = { count: 0, sum: 0, nRated: 0, repYes: 0 }
+        map[pid].count += 1
+        if (typeof row.rating === 'number') {
+          map[pid].sum += row.rating
+          map[pid].nRated += 1
+        }
+        if (row.would_buy_again === true) map[pid].repYes += 1
+      }
+
+      const out: Record<string, ProductStats> = {}
+      for (const pid of productIds) {
+        const m = map[pid]
+        if (!m) {
+          out[pid] = { count: 0, avg: null, repurchasePct: null }
+        } else {
+          const avg = m.nRated > 0 ? m.sum / m.nRated : null
+          const rep = m.count > 0 ? Math.round((m.repYes / m.count) * 100) : null
+          out[pid] = { count: m.count, avg, repurchasePct: rep }
+        }
+      }
+      setProductStats(out)
+    } catch {
+      // sessiz
+    }
+  }
+
+  async function searchProducts(termOverride?: string) {
     setPErr(null)
     setAddProductMsg(null)
     setPLoading(true)
+
     try {
-      const term = q.trim()
+      const term = (termOverride ?? q).trim()
+
+      // boş arama: listeyi temizle + seçimi düşür (senin istediğin)
       if (!term) {
         setProducts([])
+        setSelected(null)
+        setProductStats({})
         return
       }
 
@@ -239,7 +296,9 @@ export default function Home() {
         .limit(50)
 
       if (error) throw error
-      setProducts((data as Product[]) ?? [])
+      const list = ((data as Product[]) ?? []) as Product[]
+      setProducts(list)
+      await computeStats(list.map((x) => x.id))
     } catch (e: any) {
       setPErr(e?.message ?? 'Ürün araması başarısız')
     } finally {
@@ -255,9 +314,12 @@ export default function Home() {
 
       const brand = newBrand.trim()
       const name = newName.trim()
-      if (!brand || !name) throw new Error('Marka ve ürün adı zorunlu')
 
       const category = categoryChoice === 'Diğer' ? (customCategory.trim() || null) : (categoryChoice as string)
+
+      if (!brand) throw new Error('Marka zorunlu')
+      if (!name) throw new Error('Ürün adı zorunlu')
+      if (!category) throw new Error('Kategori zorunlu')
 
       setAddingProduct(true)
 
@@ -274,12 +336,7 @@ export default function Home() {
       let image_url: string | null = null
       if (newPhoto) image_url = await uploadImage(newPhoto, 'products')
 
-      const ins = await supabase
-        .from('products')
-        .insert({ brand, name, category, image_url })
-        .select('id,brand,name,category,image_url,created_at')
-        .single()
-
+      const ins = await supabase.from('products').insert({ brand, name, category, image_url }).select('id,brand,name,category,image_url,created_at').single()
       if (ins.error) throw ins.error
 
       setAddProductMsg('Ürün eklendi')
@@ -289,8 +346,11 @@ export default function Home() {
       setCustomCategory('')
       setNewPhoto(null)
 
-      setSelected(ins.data as Product)
-      if (q.trim()) await searchProducts()
+      // yeni ürün: arama alanına yaz + arama yap + seç
+      const p = ins.data as Product
+      setQ(p.name)
+      await searchProducts(p.name)
+      setSelected(p)
     } catch (e: any) {
       const msg = (e?.message ?? 'Ürün eklenemedi') as string
       setPErr(msg.toLowerCase().includes('duplicate') ? 'Bu ürün zaten ekli' : msg)
@@ -301,6 +361,8 @@ export default function Home() {
 
   async function addExperience() {
     setExpMsg(null)
+    setPErr(null)
+
     try {
       if (!userId) throw new Error('Giriş gerekli')
       if (!profile?.username) throw new Error('Önce kullanıcı adı belirle')
@@ -329,13 +391,14 @@ export default function Home() {
 
       setPros('')
       setCons('')
-      setRating(5)
+      setRating(8)
       setWba(false)
       setExpPhoto(null)
       setExpMsg('Deneyim eklendi')
 
       await loadRecent()
-      await loadProductReviews(selected.id)
+      // ürün listesi açıksa metrikleri de yenile
+      if (products.length > 0) await computeStats(products.map((x) => x.id))
     } catch (e: any) {
       setExpMsg(e?.message ?? 'Deneyim eklenemedi')
     } finally {
@@ -348,19 +411,19 @@ export default function Home() {
     try {
       const { data, error } = await supabase
         .from('experiences')
-        .select(`
+        .select(
+          `
           id,user_id,product_id,rating,pros,cons,would_buy_again,image_url,created_at,
           product:products(id,brand,name,category,image_url,created_at),
           author:profiles(username,avatar_url)
-        `)
+        `
+        )
         .order('created_at', { ascending: false })
         .limit(50)
 
       if (error) throw error
       setRecent(((data as any[]) || []) as ExperienceRow[])
-    } catch (e: any) {
-      console.error('loadRecent error:', e)
-      setExpMsg(e?.message ?? 'Son deneyimler yüklenemedi')
+    } catch {
       setRecent([])
     } finally {
       setRecentLoading(false)
@@ -375,13 +438,13 @@ export default function Home() {
         .select(
           `
           id,user_id,product_id,rating,pros,cons,would_buy_again,image_url,created_at,
-          product:products!experiences_product_id_fkey(id,brand,name,category,image_url,created_at),
-          author:profiles!experiences_user_id_fkey(username,avatar_url)
+          product:products(id,brand,name,category,image_url,created_at),
+          author:profiles(username,avatar_url)
         `
         )
         .eq('product_id', productId)
         .order('created_at', { ascending: false })
-        .limit(50)
+        .limit(100)
 
       if (error) throw error
       setProductReviews(((data as any[]) || []) as ExperienceRow[])
@@ -390,6 +453,65 @@ export default function Home() {
     } finally {
       setProductReviewsLoading(false)
     }
+  }
+
+  async function openReviewsModal(p: Product) {
+    setReviewsProduct(p)
+    setExpandedReviewIds({})
+    setReviewsOpen(true)
+    await loadProductReviews(p.id)
+  }
+
+  function toggleExpandReview(id: string) {
+    setExpandedReviewIds((prev) => ({ ...prev, [id]: !prev[id] }))
+  }
+
+  async function openUserModal(r: ExperienceRow) {
+    const u = { user_id: r.user_id, username: r.author?.username || 'Kullanıcı', avatar_url: r.author?.avatar_url ?? null }
+    setUserModal(u)
+    setUserTab('products')
+    setUserExperiences([])
+    setUserOpen(true)
+    setUserLoading(true)
+
+    try {
+      const { data, error } = await supabase
+        .from('experiences')
+        .select(
+          `
+          id,user_id,product_id,rating,pros,cons,would_buy_again,image_url,created_at,
+          product:products(id,brand,name,category,image_url,created_at),
+          author:profiles(username,avatar_url)
+        `
+        )
+        .eq('user_id', r.user_id)
+        .order('created_at', { ascending: false })
+        .limit(200)
+
+      if (error) throw error
+      setUserExperiences(((data as any[]) || []) as ExperienceRow[])
+    } catch {
+      setUserExperiences([])
+    } finally {
+      setUserLoading(false)
+    }
+  }
+
+  async function goToProductFromRecent(p: Product) {
+    // arama alanına yaz + arama yap + listeden seçilmiş gibi olsun
+    setQ(p.name)
+    await searchProducts(p.name)
+    setSelected(p)
+  }
+
+  function fmtAvg10(avg: number | null) {
+    if (avg === null || Number.isNaN(avg)) return '-'
+    const v = Math.round(avg * 10) / 10
+    return `${v}/10`
+  }
+  function fmtPct(p: number | null) {
+    if (p === null || Number.isNaN(p)) return '-'
+    return `% ${p}`
   }
 
   // UI
@@ -410,8 +532,6 @@ export default function Home() {
     )
   }
 
-  const showSelectedReviews = !!selected
-
   return (
     <div className="wrap">
       <style>{css}</style>
@@ -431,7 +551,7 @@ export default function Home() {
             <div className="word">ARAMIZDA</div>
           </div>
 
-          <div className="right">
+          <div className="rightCol">
             <button
               type="button"
               className="userPill"
@@ -458,19 +578,19 @@ export default function Home() {
             <div className="muted">Bu isim yorumlarda görünecek</div>
 
             <div className="field">
-              <div className="label">Kullanıcı adı</div>
+              <div className="label strong">Kullanıcı Adı</div>
               <input className="input" value={usernameDraft} onChange={(e) => setUsernameDraft(e.target.value)} placeholder="ör: ulas, gizem" />
             </div>
 
             <div className="field">
-              <div className="label">Profil fotoğrafı (opsiyonel)</div>
+              <div className="label strong">Profil Fotoğrafı (Opsiyonel)</div>
               <input
                 className="file"
                 type="file"
                 accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
                 onChange={(e) => setAvatarDraft(e.target.files?.[0] ?? null)}
               />
-              <div className="muted small">5MB altı</div>
+              <div className="muted small">5 MB Altı</div>
             </div>
 
             {profileErr ? <div className="err">{profileErr}</div> : null}
@@ -522,31 +642,55 @@ export default function Home() {
                     ) : null}
                   </div>
                 ) : (
-                  products.map((p) => (
-                    <button key={p.id} className={`item ${selected?.id === p.id ? 'active' : ''}`} onClick={() => setSelected(p)}>
-                      {p.image_url ? (
-                        <img
-                          className="thumb clickable"
-                          src={p.image_url}
-                          alt=""
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setLightboxAlt(`${p.brand} — ${p.name}`)
-                            setLightboxUrl(p.image_url!)
-                          }}
-                        />
-                      ) : (
-                        <div className="thumb ph" />
-                      )}
+                  products.map((p) => {
+                    const st = productStats[p.id] ?? { count: 0, avg: null, repurchasePct: null }
+                    return (
+                      <button
+                        key={p.id}
+                        className={`item ${selected?.id === p.id ? 'active' : ''}`}
+                        onClick={() => setSelected(p)}
+                      >
+                        {p.image_url ? (
+                          <img
+                            className="thumb clickable"
+                            src={p.image_url}
+                            alt=""
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setLightboxAlt(`${p.brand} — ${p.name}`)
+                              setLightboxUrl(p.image_url!)
+                            }}
+                          />
+                        ) : (
+                          <div className="thumb ph" />
+                        )}
 
-                      <div className="mid">
-                        <div className="t">
-                          {p.brand} — {p.name}
+                        <div className="mid">
+                          <div className="t">
+                            {p.brand} — {p.name}
+                          </div>
+                          <div className="muted small">{p.category || 'Kategori yok'}</div>
+
+                          <div className="metaRow">
+                            <span className="metaChip">Ortalama Puan: {fmtAvg10(st.avg)}</span>
+
+                            <button
+                              type="button"
+                              className="metaLink"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                openReviewsModal(p)
+                              }}
+                            >
+                              Yorum ({st.count})
+                            </button>
+
+                            <span className="metaChip">Tekrar Alma Oranı: {fmtPct(st.repurchasePct)}</span>
+                          </div>
                         </div>
-                        <div className="muted small">{p.category || 'Kategori yok'}</div>
-                      </div>
-                    </button>
-                  ))
+                      </button>
+                    )
+                  })
                 )}
               </div>
             </section>
@@ -557,9 +701,9 @@ export default function Home() {
               <div className="muted small">{selectedLabel}</div>
 
               <div className="field">
-                <div className="label">Puan</div>
+                <div className="label strong">Puan</div>
                 <select className="input" value={rating} onChange={(e) => setRating(parseInt(e.target.value, 10))}>
-                  {[1, 2, 3, 4, 5].map((n) => (
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
                     <option key={n} value={n}>
                       {n}
                     </option>
@@ -568,12 +712,12 @@ export default function Home() {
               </div>
 
               <div className="field">
-                <div className="label">Artılar</div>
+                <div className="label strong">Artılar</div>
                 <textarea className="ta" value={pros} onChange={(e) => setPros(e.target.value)} />
               </div>
 
               <div className="field">
-                <div className="label">Eksiler</div>
+                <div className="label strong">Eksiler</div>
                 <textarea className="ta" value={cons} onChange={(e) => setCons(e.target.value)} />
               </div>
 
@@ -583,14 +727,14 @@ export default function Home() {
               </label>
 
               <div className="field">
-                <div className="label">Deneyim fotoğrafı (opsiyonel)</div>
+                <div className="label strong">Deneyim Fotoğrafı (Opsiyonel)</div>
                 <input
                   className="file"
                   type="file"
                   accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
                   onChange={(e) => setExpPhoto(e.target.files?.[0] ?? null)}
                 />
-                <div className="muted small">5MB altı</div>
+                <div className="muted small">5 MB Altı</div>
               </div>
 
               {expMsg ? <div className={expMsg.includes('eklendi') ? 'ok' : 'err'}>{expMsg}</div> : null}
@@ -598,108 +742,13 @@ export default function Home() {
               <button className="btn btnSm" disabled={!selected || addingExp} onClick={addExperience}>
                 {addingExp ? 'Gönderiliyor…' : 'Gönder'}
               </button>
-            </section>
-
-            {/* Right */}
-            <section id="add-product" className="card tall">
-              <div className="h2">Ürün Ekle</div>
-
-              <div className="field">
-                <div className="label">Marka</div>
-                <input className="input" value={newBrand} onChange={(e) => setNewBrand(e.target.value)} />
-              </div>
-
-              <div className="field">
-                <div className="label">Ürün adı</div>
-                <input className="input" value={newName} onChange={(e) => setNewName(e.target.value)} />
-              </div>
-
-              <div className="field">
-                <div className="label">Kategori</div>
-                <select className="input" value={categoryChoice} onChange={(e) => setCategoryChoice(e.target.value as any)}>
-                  {CATEGORY_OPTIONS.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {categoryChoice === 'Diğer' ? (
-                <div className="field">
-                  <div className="label">Diğer kategori</div>
-                  <input className="input" value={customCategory} onChange={(e) => setCustomCategory(e.target.value)} placeholder="ör: Anne&Bebek" />
-                </div>
-              ) : null}
-
-              <div className="field">
-                <div className="label">Ürün fotoğrafı (opsiyonel)</div>
-                <input
-                  className="file"
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
-                  onChange={(e) => setNewPhoto(e.target.files?.[0] ?? null)}
-                />
-                <div className="muted small">5MB altı</div>
-              </div>
-
-              <button className="btn btnSm" onClick={addProduct} disabled={addingProduct}>
-                {addingProduct ? 'Ekleniyor…' : 'Ekle'}
-              </button>
 
               <div className="divider" />
 
-              <div className="h2">{showSelectedReviews ? 'Bu ürünün yorumları' : 'Son Deneyimler'}</div>
-
-              {showSelectedReviews ? (
-                productReviewsLoading ? (
-                  <div className="muted">Yükleniyor…</div>
-                ) : productReviews.length === 0 ? (
-                  <div className="muted">Bu ürüne henüz yorum yok</div>
-                ) : (
-                  <div className="recent">
-                    {productReviews.map((r) => (
-                      <div className="r" key={r.id}>
-                        <div className="rHead">
-                          {r.author?.avatar_url ? <img className="avSm" src={r.author.avatar_url} alt="" /> : <div className="avSm ph" />}
-                          <div className="rMeta">
-                            <div className="rUser">{r.author?.username || 'Kullanıcı'}</div>
-                            <div className="muted small">{new Date(r.created_at).toLocaleString('tr-TR')}</div>
-                          </div>
-                          <div className="badge">{typeof r.rating === 'number' ? `${r.rating}/5` : '-'}</div>
-                        </div>
-
-                        {r.pros ? (
-                          <div className="pill okP">
-                            <strong>Artılar :</strong> {r.pros}
-                          </div>
-                        ) : null}
-                        {r.cons ? (
-                          <div className="pill badP">
-                            <strong>Eksiler :</strong> {r.cons}
-                          </div>
-                        ) : null}
-
-                        {r.image_url ? (
-                          <img
-                            className="rImg clickable"
-                            src={r.image_url}
-                            alt=""
-                            onClick={() => {
-                              setLightboxAlt('Deneyim fotoğrafı')
-                              setLightboxUrl(r.image_url!)
-                            }}
-                          />
-                        ) : null}
-                      </div>
-                    ))}
-                  </div>
-                )
-              ) : recentLoading ? (
+              <div className="h2">Son Deneyimler</div>
+              {recentLoading ? (
                 <div className="muted">Yükleniyor…</div>
-              ) : recent.length === 0 ? (
-                <div className="muted">Henüz yok</div>
-              ) : (
+              ) : recent.length === 0 ? null : (
                 <div className="recent">
                   {recent.map((r) => (
                     <div className="r" key={r.id}>
@@ -709,35 +758,45 @@ export default function Home() {
                           <div className="rUser">{r.author?.username || 'Kullanıcı'}</div>
                           <div className="muted small">{new Date(r.created_at).toLocaleString('tr-TR')}</div>
                         </div>
-                        <div className="badge">{typeof r.rating === 'number' ? `${r.rating}/5` : '-'}</div>
+                        <div className="badge">{typeof r.rating === 'number' ? `${r.rating}/10` : '-'}</div>
                       </div>
 
                       {r.product ? (
-  <button
-    type="button"
-    className="prodLink"
-    onClick={() => {
-      setSelected(r.product as Product)
-      // istersen ürün ekle kartına kaydırsın:
-      // document.getElementById('add-product')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }}
-  >
-    {r.product.brand} — {r.product.name}
-  </button>
-) : (
-  <div className="muted small">Ürün</div>
-)}
+                        <button
+                          type="button"
+                          className="prodLink"
+                          onClick={async () => {
+                            await goToProductFromRecent(r.product!)
+                          }}
+                        >
+                          {r.product.brand} — {r.product.name}
+                          {r.product.category ? <span className="muted small"> • {r.product.category}</span> : null}
+                        </button>
+                      ) : null}
 
-                      {r.pros ? (
-  <div className="pill okP">
-    <strong>Artılar :</strong> {r.pros}
-  </div>
-) : null}
-                      {r.cons ? (
-  <div className="pill badP">
-    <strong>Eksiler :</strong> {r.cons}
-  </div>
-) : null}
+                      <div className="pcWrap">
+                        {r.pros ? (
+                          <div className="pc">
+                            <div className="pcT">
+                              <b>Artılar :</b>
+                            </div>
+                            <div className="pcB">{r.pros}</div>
+                          </div>
+                        ) : null}
+
+                        {r.cons ? (
+                          <div className="pc">
+                            <div className="pcT">
+                              <b>Eksiler :</b>
+                            </div>
+                            <div className="pcB">{r.cons}</div>
+                          </div>
+                        ) : null}
+                      </div>
+
+                      <div className="wbaRow">
+                        <span className={`wbaBadge ${r.would_buy_again ? 'yes' : 'no'}`}>{r.would_buy_again ? '✔ Tekrar Alırım' : '✖ Tekrar Almam'}</span>
+                      </div>
 
                       {r.image_url ? (
                         <img
@@ -755,6 +814,54 @@ export default function Home() {
                 </div>
               )}
             </section>
+
+            {/* Right */}
+            <section id="add-product" className="card tall">
+              <div className="h2">Ürün Ekle</div>
+
+              <div className="field">
+                <div className="label strong">Marka</div>
+                <input className="input" value={newBrand} onChange={(e) => setNewBrand(e.target.value)} />
+              </div>
+
+              <div className="field">
+                <div className="label strong">Ürün Adı</div>
+                <input className="input" value={newName} onChange={(e) => setNewName(e.target.value)} />
+              </div>
+
+              <div className="field">
+                <div className="label strong">Kategori</div>
+                <select className="input" value={categoryChoice} onChange={(e) => setCategoryChoice(e.target.value as any)}>
+                  {CATEGORY_OPTIONS.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {categoryChoice === 'Diğer' ? (
+                <div className="field">
+                  <div className="label strong">Diğer Kategori</div>
+                  <input className="input" value={customCategory} onChange={(e) => setCustomCategory(e.target.value)} placeholder="ör: Anne&Bebek" />
+                </div>
+              ) : null}
+
+              <div className="field">
+                <div className="label strong">Ürün Fotoğrafı (Opsiyonel)</div>
+                <input
+                  className="file"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+                  onChange={(e) => setNewPhoto(e.target.files?.[0] ?? null)}
+                />
+                <div className="muted small">5 MB Altı</div>
+              </div>
+
+              <button className="btn btnSm" onClick={addProduct} disabled={addingProduct}>
+                {addingProduct ? 'Ekleniyor…' : 'Ekle'}
+              </button>
+            </section>
           </main>
         )}
 
@@ -771,19 +878,19 @@ export default function Home() {
               <div className="h2">Profil</div>
 
               <div className="field">
-                <div className="label">Kullanıcı adı</div>
+                <div className="label strong">Kullanıcı Adı</div>
                 <input className="input" value={usernameDraft} onChange={(e) => setUsernameDraft(e.target.value)} />
               </div>
 
               <div className="field">
-                <div className="label">Profil fotoğrafı</div>
+                <div className="label strong">Profil Fotoğrafı</div>
                 <input
                   className="file"
                   type="file"
                   accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
                   onChange={(e) => setAvatarDraft(e.target.files?.[0] ?? null)}
                 />
-                <div className="muted small">5MB altı</div>
+                <div className="muted small">5 MB Altı</div>
               </div>
 
               {profileErr ? <div className="err">{profileErr}</div> : null}
@@ -796,7 +903,7 @@ export default function Home() {
                       await saveProfile()
                       setProfileOpen(false)
                     } catch {
-                      // mesaj zaten ekranda
+                      // hata zaten ekranda
                     }
                   }}
                   disabled={savingProfile}
@@ -804,6 +911,236 @@ export default function Home() {
                   {savingProfile ? 'Kaydediliyor…' : 'Kaydet'}
                 </button>
               </div>
+            </div>
+          </div>
+        ) : null}
+
+        {/* Reviews modal */}
+        {reviewsOpen ? (
+          <div
+            className="pm"
+            onClick={() => {
+              setReviewsOpen(false)
+              setReviewsProduct(null)
+            }}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="pmInner pmWide" onClick={(e) => e.stopPropagation()}>
+              <button
+                className="pmClose"
+                onClick={() => {
+                  setReviewsOpen(false)
+                  setReviewsProduct(null)
+                }}
+                aria-label="Kapat"
+              >
+                ×
+              </button>
+
+              <div className="h2">Yorumlar</div>
+              <div className="muted small">{reviewsProduct ? `${reviewsProduct.brand} — ${reviewsProduct.name}` : ''}</div>
+
+              <div className="divider" />
+
+              {productReviewsLoading ? (
+                <div className="muted">Yükleniyor…</div>
+              ) : productReviews.length === 0 ? (
+                <div className="muted">Bu ürüne henüz yorum yok</div>
+              ) : (
+                <div className="revList">
+                  {productReviews.map((r) => {
+                    const expanded = !!expandedReviewIds[r.id]
+                    const summaryParts: string[] = []
+                    if (r.pros) summaryParts.push(`Artılar: ${r.pros}`)
+                    if (r.cons) summaryParts.push(`Eksiler: ${r.cons}`)
+                    const summary = summaryParts.join(' • ')
+
+                    return (
+                      <div key={r.id} className={`revBar ${expanded ? 'open' : ''}`} onClick={() => toggleExpandReview(r.id)}>
+                        <div className="revTop">
+                          <div className="revUser">
+                            {r.author?.avatar_url ? <img className="avSm" src={r.author.avatar_url} alt="" /> : <div className="avSm ph" />}
+                            <button
+                              type="button"
+                              className="revUName"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                openUserModal(r)
+                              }}
+                            >
+                              {r.author?.username || 'Kullanıcı'}
+                            </button>
+                          </div>
+                          <div className="revDate muted small">{new Date(r.created_at).toLocaleString('tr-TR')}</div>
+                        </div>
+
+                        <div className="revMid">
+                          <span className="revMeta">
+                            Puan: {typeof r.rating === 'number' ? `${r.rating}/10` : '-'} •{' '}
+                            <span className={`wbaBadge ${r.would_buy_again ? 'yes' : 'no'}`}>{r.would_buy_again ? '✔ Tekrar Alırım' : '✖ Tekrar Almam'}</span>
+                          </span>
+                        </div>
+
+                        {!expanded ? (
+                          <div className="revPreview clamp2">{summary || '—'}</div>
+                        ) : (
+                          <div className="revBody">
+                            {r.pros ? (
+                              <div className="pc">
+                                <div className="pcT">
+                                  <b>Artılar :</b>
+                                </div>
+                                <div className="pcB">{r.pros}</div>
+                              </div>
+                            ) : null}
+
+                            {r.cons ? (
+                              <div className="pc">
+                                <div className="pcT">
+                                  <b>Eksiler :</b>
+                                </div>
+                                <div className="pcB">{r.cons}</div>
+                              </div>
+                            ) : null}
+
+                            {r.image_url ? (
+                              <img
+                                className="rImg clickable"
+                                src={r.image_url}
+                                alt=""
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setLightboxAlt('Deneyim fotoğrafı')
+                                  setLightboxUrl(r.image_url!)
+                                }}
+                              />
+                            ) : null}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : null}
+
+        {/* User modal */}
+        {userOpen ? (
+          <div className="pm" onClick={() => setUserOpen(false)} role="dialog" aria-modal="true">
+            <div className="pmInner pmWide" onClick={(e) => e.stopPropagation()}>
+              <button className="pmClose" onClick={() => setUserOpen(false)} aria-label="Kapat">
+                ×
+              </button>
+
+              <div className="h2">Profil</div>
+              <div className="muted small">
+                {userModal ? (
+                  <span className="inlineUser">
+                    {userModal.avatar_url ? <img className="avSm" src={userModal.avatar_url} alt="" /> : <div className="avSm ph" />}
+                    <b>{userModal.username}</b>
+                  </span>
+                ) : null}
+              </div>
+
+              <div className="divider" />
+
+              <div className="tabs">
+                <button className={`tab ${userTab === 'products' ? 'active' : ''}`} onClick={() => setUserTab('products')}>
+                  Eklediği Ürünler
+                </button>
+                <button className={`tab ${userTab === 'reviews' ? 'active' : ''}`} onClick={() => setUserTab('reviews')}>
+                  Yaptığı Yorumlar
+                </button>
+              </div>
+
+              {userLoading ? (
+                <div className="muted">Yükleniyor…</div>
+              ) : userExperiences.length === 0 ? (
+                <div className="muted">—</div>
+              ) : userTab === 'products' ? (
+                <div className="recent">
+                  {Array.from(
+                    new Map(
+                      userExperiences
+                        .filter((x) => x.product?.id)
+                        .map((x) => [x.product!.id, x.product!])
+                    ).values()
+                  ).map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className="prodLink"
+                      onClick={async () => {
+                        setUserOpen(false)
+                        await goToProductFromRecent(p)
+                      }}
+                    >
+                      {p.brand} — {p.name}
+                      {p.category ? <span className="muted small"> • {p.category}</span> : null}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="revList">
+                  {userExperiences.map((r) => (
+                    <div key={r.id} className="revBar open">
+                      <div className="revTop">
+                        <div className="revUser">
+                          {r.author?.avatar_url ? <img className="avSm" src={r.author.avatar_url} alt="" /> : <div className="avSm ph" />}
+                          <div className="revUNameStatic">{userModal?.username || 'Kullanıcı'}</div>
+                        </div>
+                        <div className="revDate muted small">{new Date(r.created_at).toLocaleString('tr-TR')}</div>
+                      </div>
+
+                      <div className="revMid">
+                        <span className="revMeta">
+                          Puan: {typeof r.rating === 'number' ? `${r.rating}/10` : '-'} •{' '}
+                          <span className={`wbaBadge ${r.would_buy_again ? 'yes' : 'no'}`}>{r.would_buy_again ? '✔ Tekrar Alırım' : '✖ Tekrar Almam'}</span>
+                        </span>
+                      </div>
+
+                      <div className="revBody">
+                        {r.product ? (
+                          <div style={{ marginBottom: 8 }}>
+                            <button
+                              type="button"
+                              className="prodLink"
+                              onClick={async () => {
+                                setUserOpen(false)
+                                await goToProductFromRecent(r.product!)
+                              }}
+                            >
+                              {r.product.brand} — {r.product.name}
+                              {r.product.category ? <span className="muted small"> • {r.product.category}</span> : null}
+                            </button>
+                          </div>
+                        ) : null}
+
+                        {r.pros ? (
+                          <div className="pc">
+                            <div className="pcT">
+                              <b>Artılar :</b>
+                            </div>
+                            <div className="pcB">{r.pros}</div>
+                          </div>
+                        ) : null}
+
+                        {r.cons ? (
+                          <div className="pc">
+                            <div className="pcT">
+                              <b>Eksiler :</b>
+                            </div>
+                            <div className="pcB">{r.cons}</div>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         ) : null}
@@ -878,7 +1215,7 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
 }
 .word{ font-weight: 900; font-size: 26px; letter-spacing: .22em; text-transform: uppercase; }
 
-.right{ display:flex; align-items:center; gap: 16px; }
+.rightCol{ display:flex; flex-direction:column; gap: 8px; align-items:flex-end; }
 
 .userPill{
   display:flex; align-items:center; gap:12px;
@@ -931,21 +1268,8 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
 .h2{ font-size: 16px; font-weight: 900; margin-bottom: 10px; }
 .muted{ color: var(--muted); }
 .small{ font-size: 12px; }
+.strong{ font-weight: 900; }
 
-.prodLink{
-  appearance:none;
-  border:0;
-  padding:0;
-  margin:0;
-  background: transparent;
-  color: rgba(255,255,255,.85);
-  font-weight: 900;
-  text-align:left;
-  cursor:pointer;
-}
-.prodLink:hover{
-  text-decoration: underline;
-}
 .grid{
   display:grid;
   grid-template-columns: 1fr 1fr 1fr;
@@ -990,7 +1314,7 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   max-height: 380px; overflow:auto; padding-right: 2px;
 }
 .item{
-  display:flex; gap:12px; align-items:center;
+  display:flex; gap:12px; align-items:flex-start;
   border-radius: var(--r2);
   border:1px solid rgba(255,255,255,.14);
   background: rgba(0,0,0,.16);
@@ -1005,6 +1329,28 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
 .mid{ flex:1; min-width:0; }
 .t{ font-weight: 900; }
 .check{ display:flex; align-items:center; gap:10px; margin-top: 10px; font-weight: 900; }
+
+.metaRow{ display:flex; flex-wrap:wrap; gap:8px; margin-top: 8px; }
+.metaChip{
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.14);
+}
+.metaLink{
+  appearance:none;
+  border: 0;
+  background: rgba(255,255,255,.12);
+  border: 1px solid rgba(255,255,255,.18);
+  color: var(--text);
+  font-weight: 900;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.metaLink:hover{ transform: translateY(-1px); }
 
 .err{
   margin-top: 10px;
@@ -1030,14 +1376,80 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
 .rMeta{ flex:1; min-width:0; }
 .rUser{ font-weight: 900; }
 .badge{ font-weight: 900; padding: 6px 10px; border-radius: 999px; background: rgba(255,255,255,.10); border:1px solid rgba(255,255,255,.18); }
-.pill{ margin-top: 8px; padding: 8px 10px; border-radius: 14px; border:1px solid rgba(255,255,255,.14); }
-.okP{ background: rgba(70,255,160,.10); }
-.badP{ background: rgba(255,90,90,.10); }
+
+.prodLink{
+  width: 100%;
+  text-align: left;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.06);
+  color: var(--text);
+  border-radius: 14px;
+  padding: 10px 12px;
+  cursor: pointer;
+  font-weight: 900;
+}
+.prodLink:hover{ transform: translateY(-1px); }
+
+.pcWrap{ display:flex; flex-direction:column; gap:10px; margin-top: 10px; }
+.pc{ border:1px solid rgba(255,255,255,.14); border-radius: 14px; background: rgba(0,0,0,.10); padding: 10px; }
+.pcT{ font-size: 12px; color: rgba(255,255,255,.86); margin-bottom: 6px; }
+.pcB{ font-size: 13px; color: rgba(255,255,255,.88); }
+
+.wbaRow{ margin-top: 10px; }
+.wbaBadge{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-weight: 900;
+  font-size: 12px;
+  border: 1px solid rgba(255,255,255,.18);
+  background: rgba(255,255,255,.08);
+}
+.wbaBadge.yes{ background: rgba(70,255,160,.10); border-color: rgba(120,255,190,.24); }
+.wbaBadge.no{ background: rgba(255,90,90,.10); border-color: rgba(255,120,120,.24); }
+
 .rImg{ width: 100%; max-height: 220px; object-fit: cover; border-radius: 14px; border:1px solid rgba(255,255,255,.18); margin-top: 10px; }
 
 .foot{ text-align:center; padding: 6px 0; }
 
 .clickable { cursor: zoom-in; }
+
+/* Reviews modal list */
+.revList{ display:flex; flex-direction:column; gap: 10px; max-height: 70vh; overflow:auto; padding-right: 2px; }
+.revBar{
+  border:1px solid rgba(255,255,255,.14);
+  background: rgba(0,0,0,.14);
+  border-radius: 16px;
+  padding: 10px;
+  cursor: pointer;
+}
+.revBar:hover{ transform: translateY(-1px); }
+.revTop{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.revUser{ display:flex; align-items:center; gap:10px; }
+.revUName{
+  appearance:none;
+  border:0;
+  background: transparent;
+  color: var(--text);
+  font-weight: 900;
+  cursor:pointer;
+  padding: 0;
+}
+.revUName:hover{ text-decoration: underline; }
+.revUNameStatic{ font-weight: 900; }
+.revMid{ margin-top: 6px; }
+.revMeta{ font-weight: 900; font-size: 12px; color: rgba(255,255,255,.88); }
+.revPreview{ margin-top: 8px; font-size: 13px; color: rgba(255,255,255,.85); }
+.revBody{ margin-top: 10px; display:flex; flex-direction:column; gap:10px; }
+
+.clamp2{
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 
 /* Lightbox */
 .lb{
@@ -1090,7 +1502,7 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   text-align: center;
 }
 
-/* Profile Modal */
+/* Modal */
 .pm{
   position: fixed;
   inset: 0;
@@ -1110,6 +1522,7 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   padding: 16px;
   position: relative;
 }
+.pmWide{ width: min(880px, 96vw); }
 .pmClose{
   position: absolute;
   top: 10px;
@@ -1123,6 +1536,20 @@ body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, 
   font-size: 22px;
   cursor: pointer;
 }
+.inlineUser{ display:inline-flex; align-items:center; gap:10px; }
+
+.tabs{ display:flex; gap: 10px; margin-bottom: 12px; }
+.tab{
+  appearance:none;
+  border:1px solid rgba(255,255,255,.18);
+  background: rgba(255,255,255,.08);
+  color: var(--text);
+  font-weight: 900;
+  padding: 10px 12px;
+  border-radius: 14px;
+  cursor:pointer;
+}
+.tab.active{ background: rgba(255,255,255,.16); border-color: rgba(255,255,255,.26); }
 
 @media(max-width: 1100px){
   .grid{ grid-template-columns: 1fr; }
